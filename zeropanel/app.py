@@ -27,13 +27,13 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 
 # 面板版本信息
-PANEL_VERSION = '2.0.0'
+PANEL_VERSION = '2.0.1'
 
 # 云更新配置
 UPDATE_CONFIG = {
-    'version_url': 'https://raw.githubusercontent.com/zerotermux/zeropanel/main/VERSION',
-    'download_url': 'https://github.com/zerotermux/zeropanel/releases/latest/download/zeropanel_v2.zip',
-    'release_notes_url': 'https://raw.githubusercontent.com/zerotermux/zeropanel/main/CHANGELOG.md'
+    'version_url': 'https://raw.githubusercontent.com/2136206076/ZeroPanel/refs/heads/main/VERSION',
+    'download_url': 'https://github.com/2136206076/ZeroPanel/blob/f53f78b1b5b569a9b08ae526dc988b2ee92e649e/zeropanel_v2.zip',
+    'release_notes_url': 'https://raw.githubusercontent.com/2136206076/ZeroPanel/refs/heads/main/CHANGELOG.md'
 }
 
 app = Flask(__name__)
