@@ -259,7 +259,7 @@ async function restartPanel() {
 
             // 延迟跳转登录页
             setTimeout(() => {
-                window.location.href = '/';
+                window.location.href = '/login';
             }, 3000);
         } else {
             showToast(data.message || '重启失败', 'error');

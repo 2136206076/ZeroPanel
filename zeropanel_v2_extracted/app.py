@@ -32,11 +32,12 @@ PANEL_VERSION = '2.0.1'
 # 云更新配置
 UPDATE_CONFIG = {
     'version_url': 'https://raw.githubusercontent.com/2136206076/ZeroPanel/refs/heads/main/VERSION',
-    'download_url': 'https://raw.githubusercontent.com/2136206076/ZeroPanel/f53f78b1b5b569a9b08ae526dc988b2ee92e649e/zeropanel_v2.zip',
+    'download_url': 'https://github.com/2136206076/ZeroPanel/blob/f53f78b1b5b569a9b08ae526dc988b2ee92e649e/zeropanel_v2.zip',
     'release_notes_url': 'https://raw.githubusercontent.com/2136206076/ZeroPanel/refs/heads/main/CHANGELOG.md'
 }
 
 app = Flask(__name__)
+app.secret_key = os.urandom(24)
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB
 CORS(app)
 
@@ -51,43 +52,6 @@ NGINX_CONF_DIR = Path(os.environ.get('PREFIX', '/data/data/com.termux/files/usr'
 
 # 允许的文件扩展名
 ALLOWED_EXTENSIONS = {'txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'zip', 'tar', 'gz', 'sql', 'php', 'html', 'css', 'js', 'json', 'xml', 'md'}
-
-# 允许文件操作的根目录
-ALLOWED_ROOTS = [WWW_DIR, DATA_DIR]
-
-
-def resolve_allowed_path(path):
-    """解析并校验路径，返回 (安全路径, 是否允许)。防止路径遍历。"""
-    try:
-        resolved = Path(path).resolve()
-    except Exception:
-        return None, False
-    for root in ALLOWED_ROOTS:
-        try:
-            resolved.relative_to(root)
-            return resolved, True
-        except ValueError:
-            continue
-    return resolved, False
-
-
-def load_or_create_secret_key():
-    """加载或创建持久化的会话密钥，避免每次重启后登录失效"""
-    secret_file = DATA_DIR / '.secret_key'
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    if secret_file.exists():
-        return secret_file.read_text().strip()
-    key = os.urandom(32).hex()
-    secret_file.write_text(key)
-    # 限制权限，仅所有者可读写
-    try:
-        os.chmod(secret_file, 0o600)
-    except Exception:
-        pass
-    return key
-
-
-app.secret_key = load_or_create_secret_key()
 
 # ==================== 数据库初始化 ====================
 
@@ -276,49 +240,29 @@ def get_system_stats():
     }
     
     try:
-        # CPU 使用率：采样两次 /proc/stat，计算间隔内的使用率
+        # CPU 使用率
         stat_file = Path('/proc/stat')
         if stat_file.exists():
-            def read_cpu_times():
-                with open(stat_file, 'r') as f:
-                    for line in f:
-                        line = line.strip()
-                        if line.startswith('cpu ') or line.startswith('cpu\t'):
-                            parts = line.split()
-                            if len(parts) >= 8:
-                                try:
-                                    return sum(int(x) for x in parts[1:8])
-                                except ValueError:
-                                    return None
-                return None
-
-            total1 = read_cpu_times()
-            idle1 = None
-            if total1 is not None:
-                with open(stat_file, 'r') as f:
-                    for line in f:
-                        line = line.strip()
-                        if line.startswith('cpu ') or line.startswith('cpu\t'):
-                            parts = line.split()
-                            idle1 = int(parts[4])
-                            break
-            if total1 is not None and idle1 is not None:
-                time.sleep(0.3)
-                total2 = read_cpu_times()
-                idle2 = None
-                if total2 is not None:
-                    with open(stat_file, 'r') as f:
-                        for line in f:
-                            line = line.strip()
-                            if line.startswith('cpu ') or line.startswith('cpu\t'):
-                                parts = line.split()
-                                idle2 = int(parts[4])
-                                break
-                if total2 is not None and idle2 is not None:
-                    total_delta = total2 - total1
-                    idle_delta = idle2 - idle1
-                    if total_delta > 0:
-                        stats['cpu_usage'] = round((1 - idle_delta / total_delta) * 100, 1)
+            with open(stat_file, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith('cpu ') or line.startswith('cpu\t'):
+                        parts = line.split()
+                        if len(parts) >= 8:
+                            try:
+                                user = int(parts[1])
+                                nice = int(parts[2])
+                                system = int(parts[3])
+                                idle = int(parts[4])
+                                iowait = int(parts[5])
+                                irq = int(parts[6])
+                                softirq = int(parts[7])
+                                total = user + nice + system + idle + iowait + irq + softirq
+                                if total > 0:
+                                    stats['cpu_usage'] = round((1 - idle / total) * 100, 1)
+                            except:
+                                pass
+                        break
         
         # 内存使用
         mem_file = Path('/proc/meminfo')
@@ -444,23 +388,6 @@ def get_service_status():
 
     return services
 
-def get_safe_domain(domain):
-    """生成可用于文件名的安全域名"""
-    return re.sub(r'[^a-zA-Z0-9_.-]', '_', domain)
-
-
-def get_nginx_config_path(domain, port=8080):
-    """获取 Nginx 配置文件路径"""
-    safe_domain = get_safe_domain(domain)
-    return NGINX_CONF_DIR / f'{safe_domain}_{port}.conf'
-
-
-def get_nginx_disabled_path(domain, port=8080):
-    """获取停止状态的 Nginx 配置文件路径"""
-    safe_domain = get_safe_domain(domain)
-    return NGINX_CONF_DIR / f'{safe_domain}_{port}.conf.disabled'
-
-
 def generate_nginx_config(domain, root_path, php_version='8.0', port=8080):
     """生成 Nginx 配置"""
     php_sock = '/data/data/com.termux/files/usr/var/run/php-fpm-' + php_version + '.sock'
@@ -469,7 +396,7 @@ def generate_nginx_config(domain, root_path, php_version='8.0', port=8080):
         'server {',
         '    listen ' + str(port) + ';',
         '    server_name ' + domain + ';',
-        '    root "' + root_path.replace('"', '\\"') + '";',
+        '    root ' + root_path + ';',
         '    index index.php index.html index.htm;',
         '',
         '    location / {',
@@ -709,7 +636,7 @@ def api_create_website():
 
     # 生成 Nginx 配置
     config_content = generate_nginx_config(domain, root, php_version, port)
-    config_file = get_nginx_config_path(domain, port)
+    config_file = NGINX_CONF_DIR / (safe_domain + '_' + str(port) + '.conf')
 
     try:
         NGINX_CONF_DIR.mkdir(parents=True, exist_ok=True)
@@ -758,18 +685,21 @@ def api_delete_website(website_id):
 
     domain, root_path, port = row
 
-    # 删除 Nginx 配置（正常和停止状态）
-    config_file = get_nginx_config_path(domain, port)
-    disabled_file = get_nginx_disabled_path(domain, port)
+    # 删除 Nginx 配置
+    safe_domain = domain.replace(':', '_').replace('/', '_')
+    config_file = NGINX_CONF_DIR / (safe_domain + '_' + str(port) + '.conf')
     if config_file.exists():
         config_file.unlink()
-    if disabled_file.exists():
-        disabled_file.unlink()
 
     # 兼容旧配置文件命名
-    old_config_file = NGINX_CONF_DIR / (get_safe_domain(domain) + '.conf')
+    old_config_file = NGINX_CONF_DIR / (domain + '.conf')
     if old_config_file.exists():
         old_config_file.unlink()
+
+    # 还可能存在 .conf.disabled 文件
+    disabled_file = NGINX_CONF_DIR / (safe_domain + '_' + str(port) + '.conf.disabled')
+    if disabled_file.exists():
+        disabled_file.unlink()
 
     # 从数据库删除
     cursor.execute('DELETE FROM websites WHERE id = ?', (website_id,))
@@ -798,9 +728,11 @@ def api_start_website(website_id):
         return jsonify({'success': False, 'message': '网站不存在'})
 
     domain, root_path, php_version, port = row
+    safe_domain = domain.replace(':', '_').replace('/', '_')
 
-    config_file = get_nginx_config_path(domain, port)
-    disabled_file = get_nginx_disabled_path(domain, port)
+    # 检查配置文件（支持新格式 safe_domain_port.conf）
+    config_file = NGINX_CONF_DIR / (safe_domain + '_' + str(port) + '.conf')
+    disabled_file = NGINX_CONF_DIR / (safe_domain + '_' + str(port) + '.conf.disabled')
 
     if not config_file.exists():
         # 如果有 .disabled 文件，重命名回来
@@ -845,12 +777,12 @@ def api_stop_website(website_id):
         return jsonify({'success': False, 'message': '网站不存在'})
 
     domain, port = row
-    config_file = get_nginx_config_path(domain, port)
-    disabled_file = get_nginx_disabled_path(domain, port)
+    safe_domain = domain.replace(':', '_').replace('/', '_')
+    config_file = NGINX_CONF_DIR / (safe_domain + '_' + str(port) + '.conf')
 
     # 重命名配置文件以停止网站
     if config_file.exists():
-        config_file.rename(disabled_file)
+        config_file.rename(NGINX_CONF_DIR / (safe_domain + '_' + str(port) + '.conf.disabled'))
 
     # 重载 Nginx
     run_command(['nginx', '-s', 'reload'])
@@ -865,26 +797,21 @@ def api_stop_website(website_id):
 @login_required
 def api_restart_website(website_id):
     """重启网站"""
-    stop_result = api_stop_website(website_id)
-    # 如果停止失败，直接返回错误（jsonify 默认状态码为 200，需检查 success 字段）
-    if hasattr(stop_result, 'get_json'):
-        stop_data = stop_result.get_json()
-        if stop_data and not stop_data.get('success', True):
-            return stop_result
-
+    # 先停止再启动
+    api_stop_website(website_id)
+    
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute('SELECT domain, port FROM websites WHERE id = ?', (website_id,))
+    cursor.execute('SELECT domain FROM websites WHERE id = ?', (website_id,))
     row = cursor.fetchone()
     conn.close()
-
+    
     if row:
-        domain, port = row
-        disabled_file = get_nginx_disabled_path(domain, port)
-        config_file = get_nginx_config_path(domain, port)
-        if disabled_file.exists():
-            disabled_file.rename(config_file)
-
+        domain = row[0]
+        config_file = NGINX_CONF_DIR / f'{domain}.conf.disabled'
+        if config_file.exists():
+            config_file.rename(config_file.with_suffix(''))
+    
     return api_start_website(website_id)
 
 # ==================== 数据库工具函数 ====================
@@ -972,20 +899,18 @@ def mariadb_dump(db_name, output_file):
         ['mariadb-dump', db_name],
         ['mysqldump', db_name],
     ]
-    last_error = '备份失败：未找到可用的 mysqldump/mariadb-dump 命令'
     for cmd in dump_candidates:
         try:
             with open(output_file, 'w') as f:
                 result = subprocess.run(cmd, stdout=f, stderr=subprocess.PIPE, timeout=120)
             if result.returncode == 0 and output_file.exists() and output_file.stat().st_size > 0:
                 return True, ''
-            last_error = result.stderr.decode('utf-8', errors='ignore').strip() if result.stderr else '备份命令执行失败'
         except FileNotFoundError:
             continue
         except Exception as e:
             last_error = str(e)
             continue
-    return False, last_error
+    return False, '备份失败：未找到可用的 mysqldump/mariadb-dump 命令'
 
 
 def mariadb_restore(db_name, input_file):
@@ -996,32 +921,18 @@ def mariadb_restore(db_name, input_file):
         ['mariadb', db_name],
         ['mysql', db_name],
     ]
-    last_error = '恢复失败：未找到可用的 mariadb/mysql 命令'
     for cmd in restore_candidates:
         try:
             with open(input_file, 'r') as f:
                 result = subprocess.run(cmd, stdin=f, capture_output=True, timeout=120)
             if result.returncode == 0:
                 return True, ''
-            last_error = result.stderr.decode('utf-8', errors='ignore').strip() if result.stderr else '恢复命令执行失败'
         except FileNotFoundError:
             continue
         except Exception as e:
             last_error = str(e)
             continue
-    return False, last_error
-
-
-def quote_identifier(name):
-    """安全地引用 SQL 标识符（数据库名、表名等），仅允许基本字符。"""
-    if not re.match(r'^[a-zA-Z0-9_]+$', name):
-        raise ValueError('非法的数据库标识符')
-    return '`' + name + '`'
-
-
-def quote_string(value):
-    """安全地转义 SQL 字符串字面量。"""
-    return "'" + value.replace("'", "''").replace("\\", "\\\\") + "'"
+    return False, '恢复失败：未找到可用的 mariadb/mysql 命令'
 
 
 # ==================== API：数据库管理 ====================
@@ -1037,33 +948,30 @@ def api_list_databases():
         for db in stdout.split('\n')[1:]:
             db = db.strip()
             if db and db not in ('information_schema', 'mysql', 'performance_schema'):
-                try:
-                    db_quoted = quote_identifier(db)
-                except ValueError:
-                    continue
-
                 # 获取数据库大小
-                size_sql = f"SELECT SUM(data_length + index_length) FROM information_schema.tables WHERE table_schema = {db_quoted}"
-                size_success, size_stdout, _ = mariadb_query(size_sql)
+                size_success, size_stdout, _ = mariadb_query(
+                    "SELECT SUM(data_length + index_length) FROM information_schema.tables WHERE table_schema = '" + db + "'"
+                )
                 size = 0
                 if size_success and size_stdout:
                     try:
                         lines = size_stdout.strip().split('\n')
                         if len(lines) >= 2 and lines[1]:
                             size = int(float(lines[1]))
-                    except Exception:
+                    except:
                         pass
 
                 # 获取表数量
-                tables_sql = f"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = {db_quoted}"
-                tables_success, tables_stdout, _ = mariadb_query(tables_sql)
+                tables_success, tables_stdout, _ = mariadb_query(
+                    "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '" + db + "'"
+                )
                 tables = 0
                 if tables_success and tables_stdout:
                     try:
                         lines = tables_stdout.strip().split('\n')
                         if len(lines) >= 2 and lines[1]:
                             tables = int(lines[1])
-                    except Exception:
+                    except:
                         pass
 
                 databases.append({
@@ -1093,29 +1001,18 @@ def api_create_database():
     if not re.match(r'^[a-zA-Z0-9_]+$', name):
         return jsonify({'success': False, 'message': '数据库名只能包含字母、数字和下划线'})
 
-    # 验证字符集白名单
-    allowed_charsets = {'utf8mb4', 'utf8', 'latin1', 'gbk', 'gb2312'}
-    if charset not in allowed_charsets:
-        return jsonify({'success': False, 'message': '不支持的字符集'})
-
     # 创建数据库
-    try:
-        db_quoted = quote_identifier(name)
-    except ValueError:
-        return jsonify({'success': False, 'message': '数据库名包含非法字符'})
-
-    success, _, stderr = mariadb_query(f'CREATE DATABASE {db_quoted} CHARACTER SET {charset}')
+    success, _, stderr = mariadb_query('CREATE DATABASE `' + name + '` CHARACTER SET ' + charset)
     if not success:
         return jsonify({'success': False, 'message': '创建数据库失败: ' + stderr})
 
     # 创建用户并授权（可选）
     if user and password:
-        if not re.match(r'^[a-zA-Z0-9_]+$', user):
-            return jsonify({'success': False, 'message': '数据库用户名只能包含字母、数字和下划线'})
-        safe_user = quote_string(user)
-        safe_pwd = quote_string(password)
-        mariadb_query(f"CREATE USER IF NOT EXISTS {safe_user}@'localhost' IDENTIFIED BY {safe_pwd}")
-        mariadb_query(f"GRANT ALL PRIVILEGES ON {db_quoted}.* TO {safe_user}@'localhost'")
+        # 清理用户名密码中的引号
+        safe_user = user.replace("'", "").replace('"', '')
+        safe_pwd = password.replace("'", "\\'")
+        mariadb_query("CREATE USER IF NOT EXISTS '" + safe_user + "'@'localhost' IDENTIFIED BY '" + safe_pwd + "'")
+        mariadb_query("GRANT ALL PRIVILEGES ON `" + name + "`.* TO '" + safe_user + "'@'localhost'")
         mariadb_query('FLUSH PRIVILEGES')
 
     return jsonify({'success': True, 'message': '数据库创建成功'})
@@ -1125,12 +1022,7 @@ def api_create_database():
 @login_required
 def api_delete_database(name):
     """删除数据库"""
-    try:
-        db_quoted = quote_identifier(name)
-    except ValueError:
-        return jsonify({'success': False, 'message': '数据库名包含非法字符'})
-
-    success, _, stderr = mariadb_query(f'DROP DATABASE IF EXISTS {db_quoted}')
+    success, _, stderr = mariadb_query('DROP DATABASE IF EXISTS `' + name + '`')
     if not success:
         return jsonify({'success': False, 'message': '删除数据库失败: ' + stderr})
 
@@ -1175,17 +1067,12 @@ def api_restore_database(name):
     if not backup_file:
         return jsonify({'success': False, 'message': '请选择备份文件'})
 
-    backup_path, allowed = resolve_allowed_path(backup_file)
-    if not allowed or backup_path is None or not backup_path.exists():
-        return jsonify({'success': False, 'message': '备份文件不存在或路径非法'})
-
-    try:
-        db_quoted = quote_identifier(name)
-    except ValueError:
-        return jsonify({'success': False, 'message': '数据库名包含非法字符'})
+    backup_path = Path(backup_file)
+    if not backup_path.exists():
+        return jsonify({'success': False, 'message': '备份文件不存在'})
 
     # 先确保数据库存在
-    mariadb_query(f'CREATE DATABASE IF NOT EXISTS {db_quoted}')
+    mariadb_query('CREATE DATABASE IF NOT EXISTS `' + name + '`')
 
     success, error = mariadb_restore(name, backup_path)
     if not success:
@@ -1221,23 +1108,13 @@ def api_list_database_backups(name):
 @login_required
 def api_import_database():
     """导入 .sql 文件到数据库"""
-    is_upload = bool(request.files.get('file'))
-
-    if is_upload:
-        db_name = request.form.get('name', '').strip()
-    else:
-        data = request.get_json(silent=True) or {}
-        db_name = data.get('name', '').strip()
-
+    # 支持两种方式：上传文件 或 指定已存在的文件路径
+    db_name = request.form.get('name') or (request.json.get('name') if request.is_json else '')
     if not db_name:
         return jsonify({'success': False, 'message': '请提供目标数据库名'})
 
-    if not re.match(r'^[a-zA-Z0-9_]+$', db_name):
-        return jsonify({'success': False, 'message': '数据库名只能包含字母、数字和下划线'})
-
     tmp_path = None
-    is_temp = False
-    if is_upload:
+    if 'file' in request.files:
         f = request.files['file']
         if not f.filename:
             return jsonify({'success': False, 'message': '未选择文件'})
@@ -1246,34 +1123,28 @@ def api_import_database():
         # 保存到临时目录
         tmp_dir = DATA_DIR / 'tmp'
         tmp_dir.mkdir(parents=True, exist_ok=True)
-        tmp_path = tmp_dir / ('import_' + str(int(time.time())) + '_' + secure_filename(f.filename))
+        tmp_path = tmp_dir / ('import_' + str(int(time.time())) + '_' + f.filename)
         f.save(str(tmp_path))
-        is_temp = True
     else:
         # JSON 方式：指定文件路径
         data = request.get_json(silent=True) or {}
         sql_path = data.get('path', '')
         if not sql_path:
             return jsonify({'success': False, 'message': '请提供 SQL 文件'})
-        tmp_path, allowed = resolve_allowed_path(sql_path)
-        if not allowed or tmp_path is None or not tmp_path.exists():
-            return jsonify({'success': False, 'message': 'SQL 文件不存在或路径非法'})
-
-    try:
-        db_quoted = quote_identifier(db_name)
-    except ValueError:
-        return jsonify({'success': False, 'message': '数据库名包含非法字符'})
+        tmp_path = Path(sql_path)
+        if not tmp_path.exists():
+            return jsonify({'success': False, 'message': 'SQL 文件不存在'})
 
     # 确保数据库存在
-    mariadb_query(f'CREATE DATABASE IF NOT EXISTS {db_quoted}')
+    mariadb_query('CREATE DATABASE IF NOT EXISTS `' + db_name + '`')
 
     success, error = mariadb_restore(db_name, tmp_path)
     # 清理临时文件（仅限上传产生的临时文件）
-    if is_temp and tmp_path and tmp_path.exists():
-        try:
+    try:
+        if 'file' in request.files and tmp_path and tmp_path.exists():
             tmp_path.unlink()
-        except Exception:
-            pass
+    except Exception:
+        pass
 
     if not success:
         return jsonify({'success': False, 'message': '导入失败: ' + error})
@@ -1288,14 +1159,19 @@ def api_import_database():
 def api_list_files():
     """获取文件列表"""
     path = request.args.get('path', str(WWW_DIR))
-
-    path_obj, allowed = resolve_allowed_path(path)
-    if not allowed or path_obj is None:
-        path_obj = WWW_DIR
-
+    
+    # 安全检查：防止路径遍历
+    try:
+        path = str(Path(path).resolve())
+        if not path.startswith(str(WWW_DIR)) and not path.startswith(str(DATA_DIR)):
+            path = str(WWW_DIR)
+    except:
+        path = str(WWW_DIR)
+    
+    path_obj = Path(path)
     if not path_obj.exists():
         path_obj.mkdir(parents=True, exist_ok=True)
-
+    
     files = []
     try:
         for item in path_obj.iterdir():
@@ -1309,16 +1185,13 @@ def api_list_files():
             })
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
-
+    
     # 排序：目录在前，然后按名称排序
     files.sort(key=lambda x: (x['type'] != 'directory', x['name'].lower()))
-
-    www_resolved = WWW_DIR.resolve()
-    is_root = path_obj.resolve() == www_resolved
-
+    
     return jsonify({
-        'path': str(path_obj),
-        'parent': str(path_obj.parent) if not is_root else None,
+        'path': path,
+        'parent': str(path_obj.parent) if path_obj != WWW_DIR else None,
         'files': files
     })
 
@@ -1327,31 +1200,30 @@ def api_list_files():
 def api_upload_file():
     """上传文件"""
     path = request.form.get('path', str(WWW_DIR))
-
-    base_path, allowed = resolve_allowed_path(path)
-    if not allowed or base_path is None:
+    
+    # 安全检查
+    try:
+        path = str(Path(path).resolve())
+        if not path.startswith(str(WWW_DIR)) and not path.startswith(str(DATA_DIR)):
+            return jsonify({'success': False, 'message': '非法路径'})
+    except:
         return jsonify({'success': False, 'message': '非法路径'})
-
+    
     if 'file' not in request.files:
         return jsonify({'success': False, 'message': '没有选择文件'})
-
+    
     file = request.files['file']
     if file.filename == '':
         return jsonify({'success': False, 'message': '没有选择文件'})
-
+    
     filename = secure_filename(file.filename)
-    filepath = base_path / filename
-
-    # 校验最终路径仍在允许范围内（避免文件名中包含 ../）
-    final_path, final_allowed = resolve_allowed_path(filepath)
-    if not final_allowed or final_path is None:
-        return jsonify({'success': False, 'message': '非法文件名'})
-
+    filepath = Path(path) / filename
+    
     try:
-        file.save(final_path)
+        file.save(filepath)
     except Exception as e:
         return jsonify({'success': False, 'message': f'上传失败: {str(e)}'})
-
+    
     return jsonify({'success': True, 'message': '上传成功'})
 
 @app.route('/api/files/download')
@@ -1359,14 +1231,19 @@ def api_upload_file():
 def api_download_file():
     """下载文件"""
     path = request.args.get('path', '')
-
-    filepath, allowed = resolve_allowed_path(path)
-    if not allowed or filepath is None:
+    
+    # 安全检查
+    try:
+        path = str(Path(path).resolve())
+        if not path.startswith(str(WWW_DIR)) and not path.startswith(str(DATA_DIR)):
+            return jsonify({'success': False, 'message': '非法路径'})
+    except:
         return jsonify({'success': False, 'message': '非法路径'})
-
+    
+    filepath = Path(path)
     if not filepath.exists() or not filepath.is_file():
         return jsonify({'success': False, 'message': '文件不存在'})
-
+    
     return send_file(filepath, as_attachment=True)
 
 @app.route('/api/files/mkdir', methods=['POST'])
@@ -1376,23 +1253,24 @@ def api_mkdir():
     data = request.get_json()
     path = data.get('path', '')
     name = data.get('name', '').strip()
-
+    
     if not name:
         return jsonify({'success': False, 'message': '目录名不能为空'})
-
-    base_path, allowed = resolve_allowed_path(path)
-    if not allowed or base_path is None:
+    
+    # 安全检查
+    try:
+        path = str(Path(path).resolve())
+        if not path.startswith(str(WWW_DIR)) and not path.startswith(str(DATA_DIR)):
+            return jsonify({'success': False, 'message': '非法路径'})
+    except:
         return jsonify({'success': False, 'message': '非法路径'})
-
-    new_dir, dir_allowed = resolve_allowed_path(base_path / name)
-    if not dir_allowed or new_dir is None:
-        return jsonify({'success': False, 'message': '非法目录名'})
-
+    
+    new_dir = Path(path) / name
     try:
         new_dir.mkdir(parents=True, exist_ok=True)
     except Exception as e:
         return jsonify({'success': False, 'message': f'创建失败: {str(e)}'})
-
+    
     return jsonify({'success': True, 'message': '目录创建成功'})
 
 @app.route('/api/files/rename', methods=['POST'])
@@ -1402,23 +1280,26 @@ def api_rename_file():
     data = request.get_json()
     old_path = data.get('old_path', '')
     new_name = data.get('new_name', '').strip()
-
+    
     if not new_name:
         return jsonify({'success': False, 'message': '新名称不能为空'})
-
-    old_file, allowed = resolve_allowed_path(old_path)
-    if not allowed or old_file is None:
+    
+    # 安全检查
+    try:
+        old_path = str(Path(old_path).resolve())
+        if not old_path.startswith(str(WWW_DIR)) and not old_path.startswith(str(DATA_DIR)):
+            return jsonify({'success': False, 'message': '非法路径'})
+    except:
         return jsonify({'success': False, 'message': '非法路径'})
-
-    new_file, new_allowed = resolve_allowed_path(old_file.parent / new_name)
-    if not new_allowed or new_file is None:
-        return jsonify({'success': False, 'message': '非法新名称'})
-
+    
+    old_file = Path(old_path)
+    new_file = old_file.parent / new_name
+    
     try:
         old_file.rename(new_file)
     except Exception as e:
         return jsonify({'success': False, 'message': f'重命名失败: {str(e)}'})
-
+    
     return jsonify({'success': True, 'message': '重命名成功'})
 
 @app.route('/api/files/delete', methods=['POST'])
@@ -1427,11 +1308,16 @@ def api_delete_file():
     """删除文件/目录"""
     data = request.get_json()
     path = data.get('path', '')
-
-    filepath, allowed = resolve_allowed_path(path)
-    if not allowed or filepath is None:
+    
+    # 安全检查
+    try:
+        path = str(Path(path).resolve())
+        if not path.startswith(str(WWW_DIR)) and not path.startswith(str(DATA_DIR)):
+            return jsonify({'success': False, 'message': '非法路径'})
+    except:
         return jsonify({'success': False, 'message': '非法路径'})
-
+    
+    filepath = Path(path)
     try:
         if filepath.is_dir():
             shutil.rmtree(filepath)
@@ -1439,7 +1325,7 @@ def api_delete_file():
             filepath.unlink()
     except Exception as e:
         return jsonify({'success': False, 'message': f'删除失败: {str(e)}'})
-
+    
     return jsonify({'success': True, 'message': '删除成功'})
 
 @app.route('/api/files/read')
@@ -1447,25 +1333,30 @@ def api_delete_file():
 def api_read_file():
     """读取文件内容"""
     path = request.args.get('path', '')
-
-    filepath, allowed = resolve_allowed_path(path)
-    if not allowed or filepath is None:
+    
+    # 安全检查
+    try:
+        path = str(Path(path).resolve())
+        if not path.startswith(str(WWW_DIR)) and not path.startswith(str(DATA_DIR)):
+            return jsonify({'success': False, 'message': '非法路径'})
+    except:
         return jsonify({'success': False, 'message': '非法路径'})
-
+    
+    filepath = Path(path)
     if not filepath.exists() or not filepath.is_file():
         return jsonify({'success': False, 'message': '文件不存在'})
-
+    
     # 检查文件大小
     if filepath.stat().st_size > 1024 * 1024:  # 1MB
         return jsonify({'success': False, 'message': '文件过大，请使用下载功能'})
-
+    
     try:
         content = filepath.read_text(encoding='utf-8')
     except UnicodeDecodeError:
         return jsonify({'success': False, 'message': '无法读取此文件类型'})
     except Exception as e:
         return jsonify({'success': False, 'message': f'读取失败: {str(e)}'})
-
+    
     return jsonify({'success': True, 'content': content})
 
 @app.route('/api/files/write', methods=['POST'])
@@ -1475,16 +1366,21 @@ def api_write_file():
     data = request.get_json()
     path = data.get('path', '')
     content = data.get('content', '')
-
-    filepath, allowed = resolve_allowed_path(path)
-    if not allowed or filepath is None:
+    
+    # 安全检查
+    try:
+        path = str(Path(path).resolve())
+        if not path.startswith(str(WWW_DIR)) and not path.startswith(str(DATA_DIR)):
+            return jsonify({'success': False, 'message': '非法路径'})
+    except:
         return jsonify({'success': False, 'message': '非法路径'})
-
+    
+    filepath = Path(path)
     try:
         filepath.write_text(content, encoding='utf-8')
     except Exception as e:
         return jsonify({'success': False, 'message': f'保存失败: {str(e)}'})
-
+    
     return jsonify({'success': True, 'message': '保存成功'})
 
 # ==================== API：系统监控 ====================
@@ -1623,45 +1519,6 @@ def api_check_update():
         })
 
 
-def _backup_current_version(backup_file):
-    """备份当前面板代码文件到 ZIP"""
-    exclude_names = {'data', '__pycache__', '.git', '.venv', 'venv'}
-    with zipfile.ZipFile(backup_file, 'w', zipfile.ZIP_DEFLATED) as zf:
-        for file_path in BASE_DIR.rglob('*'):
-            if not file_path.is_file():
-                continue
-            # 跳过数据目录、缓存、虚拟环境等
-            if any(part in exclude_names for part in file_path.parts):
-                continue
-            arcname = file_path.relative_to(BASE_DIR)
-            zf.write(file_path, arcname)
-
-
-def _safe_extract_update(zip_path, target_dir):
-    """安全解压更新包，支持根目录布局或 zeropanel/ 子目录布局"""
-    with zipfile.ZipFile(zip_path, 'r') as zf:
-        members = zf.namelist()
-        has_root_prefix = any(m.startswith('zeropanel/') for m in members)
-        prefix = 'zeropanel/' if has_root_prefix else ''
-        prefix_len = len(prefix)
-
-        for member in members:
-            if not member.startswith(prefix):
-                continue
-            target_name = member[prefix_len:]
-            if not target_name or target_name.endswith('/'):
-                continue
-            # 防止 zip slip
-            extracted_path = target_dir / target_name
-            try:
-                extracted_path.resolve().relative_to(target_dir.resolve())
-            except ValueError:
-                continue
-            extracted_path.parent.mkdir(parents=True, exist_ok=True)
-            with zf.open(member) as src, open(extracted_path, 'wb') as dst:
-                shutil.copyfileobj(src, dst)
-
-
 @app.route('/api/system/do-update', methods=['POST'])
 @login_required
 def api_do_update():
@@ -1678,7 +1535,13 @@ def api_do_update():
         backup_dir.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         backup_file = backup_dir / ('backup_' + timestamp + '.zip')
-        _backup_current_version(backup_file)
+
+        # 备份当前文件
+        with zipfile.ZipFile(backup_file, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for file_path in BASE_DIR.iterdir():
+                if file_path.is_file() and file_path.suffix in ('.py', '.sh', '.txt'):
+                    if file_path.name not in ('panel.db',):
+                        zf.write(file_path, file_path.name)
 
         # 2. 下载新版本
         update_dir = DATA_DIR / 'update_temp'
@@ -1692,32 +1555,38 @@ def api_do_update():
         req = Request(download_url, headers=headers)
 
         zip_path = update_dir / 'update.zip'
-        with urlopen(req, timeout=120) as response:
+        with urlopen(req, timeout=60) as response:
+            total_size = int(response.headers.get('Content-Length', 0))
+            downloaded = 0
+            chunk_size = 8192
             with open(zip_path, 'wb') as f:
                 while True:
-                    chunk = response.read(8192)
+                    chunk = response.read(chunk_size)
                     if not chunk:
                         break
                     f.write(chunk)
+                    downloaded += len(chunk)
 
-        # 3. 校验下载文件
-        if not zip_path.exists() or zip_path.stat().st_size == 0:
-            raise zipfile.BadZipFile('下载文件为空')
+        # 3. 解压并更新文件
+        with zipfile.ZipFile(zip_path, 'r') as zf:
+            for member in zf.namelist():
+                # 安全检查：只解压 zeropanel 目录下的文件
+                if member.startswith('zeropanel/'):
+                    target_name = member[10:]  # 去掉 zeropanel/ 前缀
+                    if target_name:
+                        target_path = BASE_DIR / target_name
+                        # 确保目标目录存在
+                        target_path.parent.mkdir(parents=True, exist_ok=True)
+                        try:
+                            zf.extract(member, update_dir)
+                            # 移动到目标位置
+                            extracted = update_dir / member
+                            if extracted.is_file():
+                                shutil.copy2(extracted, target_path)
+                        except Exception:
+                            pass
 
-        # 4. 解压到临时目录
-        extract_dir = update_dir / 'extracted'
-        extract_dir.mkdir(parents=True, exist_ok=True)
-        _safe_extract_update(zip_path, extract_dir)
-
-        # 5. 覆盖到 BASE_DIR
-        for file_path in extract_dir.rglob('*'):
-            if not file_path.is_file():
-                continue
-            target_path = BASE_DIR / file_path.relative_to(extract_dir)
-            target_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(file_path, target_path)
-
-        # 6. 清理临时文件
+        # 4. 清理临时文件
         shutil.rmtree(update_dir)
 
         return jsonify({
@@ -1744,23 +1613,21 @@ def api_rollback():
         data = request.get_json() or {}
         backup_file = data.get('backup_file')
 
-        backup_path, allowed = resolve_allowed_path(backup_file)
-        if not allowed or backup_path is None or not backup_path.exists():
-            return jsonify({'success': False, 'message': '备份文件不存在或路径非法'})
+        if not backup_file or not Path(backup_file).exists():
+            return jsonify({'success': False, 'message': '备份文件不存在'})
 
-        # 解压备份（防止 zip slip）
+        backup_path = Path(backup_file)
+
+        # 解压备份
         with zipfile.ZipFile(backup_path, 'r') as zf:
             for member in zf.namelist():
-                if member.endswith('/'):
-                    continue
                 target_path = BASE_DIR / member
                 try:
-                    target_path.resolve().relative_to(BASE_DIR.resolve())
-                except ValueError:
-                    continue
-                target_path.parent.mkdir(parents=True, exist_ok=True)
-                with zf.open(member) as src, open(target_path, 'wb') as dst:
-                    shutil.copyfileobj(src, dst)
+                    zf.extract(member, BASE_DIR)
+                    if (BASE_DIR / member).is_file():
+                        shutil.copy2(BASE_DIR / member, target_path)
+                except Exception:
+                    pass
 
         return jsonify({
             'success': True,
@@ -1785,16 +1652,12 @@ def api_restart_panel():
 
         # 启动新的进程
         subprocess.Popen(
-            ['python3', script_path],
+            ['python', script_path],
             cwd=str(BASE_DIR),
             stdout=open(log_file, 'a'),
             stderr=subprocess.STDOUT,
             start_new_session=True
         )
-
-        # 延迟终止当前进程，让新进程有时间启动并响应请求
-        subprocess.Popen(['python3', '-c', f'import time, os; time.sleep(2); os.kill({current_pid}, 15)'],
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
 
         return jsonify({
             'success': True,
