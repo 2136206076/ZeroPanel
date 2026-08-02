@@ -1,6 +1,180 @@
-# ZeroPanel v2.0 技术架构文档
+# ZeroPanel v2.0
 
-## 1. 架构设计
+一款为 ZeroTermux 设计的轻量级建站面板，支持网站管理、数据库管理、文件管理、系统监控和云更新。
+
+---
+
+## 目录
+
+1. [安装教程](#安装教程)
+2. [快速上手](#快速上手)
+3. [常用命令](#常用命令)
+4. [技术架构](#技术架构)
+5. [API 定义](#api-定义)
+6. [项目结构](#项目结构)
+7. [安全考虑](#安全考虑)
+8. [开发指南](#开发指南)
+
+---
+
+## 安装教程
+
+### 环境要求
+
+- Android 设备，已安装 [ZeroTermux](https://github.com/1q23lyc45/ZeroTermux/releases)
+- 至少 200MB 可用存储空间
+- 建议 Android 8.0 及以上版本
+
+---
+
+### 方式一：一键在线安装（推荐）
+
+在 ZeroTermux 终端中执行：
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/2136206076/ZeroPanel/main/zeropanel/install.sh)
+```
+
+安装过程会自动完成：
+
+1. 更新 Termux 软件源
+2. 安装 Python 3、Nginx、MariaDB、PHP-FPM
+3. 安装 Python 依赖（Flask、Flask-CORS、Werkzeug）
+4. 创建 `zeropanel` 快捷命令
+5. 启动面板服务
+
+安装完成后，访问：
+
+```text
+http://localhost:5000
+```
+
+默认登录账号：
+
+| 字段 | 值 |
+|------|-----|
+| 账号 | `admin` |
+| 密码 | `admin123` |
+
+> 登录后请立即进入「账号设置」修改默认密码。
+
+---
+
+### 方式二：手动安装
+
+适合想自定义安装路径或排查问题的用户。
+
+#### 步骤 1：安装基础依赖
+
+```bash
+pkg update -y
+pkg install -y python3 nginx mariadb php-fpm curl unzip
+```
+
+#### 步骤 2：安装 Python 依赖
+
+```bash
+pip3 install -r requirements.txt
+```
+
+#### 步骤 3：下载并解压面板
+
+```bash
+cd ~
+curl -fsSL -O https://raw.githubusercontent.com/2136206076/ZeroPanel/main/zeropanel_v2.zip
+unzip zeropanel_v2.zip -d ~/zeropanel
+```
+
+#### 步骤 4：运行本地安装脚本
+
+```bash
+bash ~/zeropanel/install.sh
+```
+
+#### 步骤 5：启动面板
+
+```bash
+zeropanel start
+```
+
+然后访问 `http://localhost:5000` 登录。
+
+---
+
+## 快速上手
+
+### 首次使用配置
+
+1. **修改默认密码**：登录后进入「账号设置」→「修改密码」
+2. **创建第一个网站**：进入「网站管理」→「创建网站」，输入域名和端口
+3. **创建数据库**：进入「数据库」→「创建数据库」
+4. **上传网站文件**：进入「文件管理」，上传到网站根目录
+
+---
+
+## 常用命令
+
+安装完成后，可以使用 `zeropanel` 命令管理面板：
+
+```bash
+zeropanel start      # 启动面板
+zeropanel stop       # 停止面板
+zeropanel restart    # 重启面板
+zeropanel status     # 查看面板及 Nginx/MariaDB/PHP-FPM 状态
+zeropanel log        # 查看面板运行日志
+```
+
+---
+
+## 常见问题
+
+### 1. 安装过程中提示 `curl: command not found`
+
+执行 `pkg install -y curl` 后重新运行安装命令。
+
+### 2. 安装后访问 `http://localhost:5000` 无响应
+
+检查面板服务是否运行：
+
+```bash
+zeropanel status
+```
+
+如果没有运行，尝试启动：
+
+```bash
+zeropanel start
+```
+
+查看日志：
+
+```bash
+zeropanel log
+```
+
+### 3. 创建网站后无法访问
+
+确保网站状态为「运行中」，并且端口没有被其他应用占用。可以在 ZeroTermux 中执行：
+
+```bash
+ss -tlnp | grep 你的端口
+```
+
+### 4. 如何卸载 ZeroPanel
+
+```bash
+zeropanel stop
+rm -rf ~/zeropanel
+rm -f $PREFIX/bin/zeropanel
+```
+
+> 注意：卸载会删除所有网站数据和数据库，请提前备份 `~/zeropanel/data/`。
+
+---
+
+## 技术架构
+
+### 1. 架构设计
 
 ```mermaid
 flowchart TB
@@ -45,7 +219,7 @@ flowchart TB
     Database --> SQLite
 ```
 
-## 2. 技术说明
+### 2. 技术说明
 
 - **前端**: 原生 HTML5 + CSS3 + JavaScript (ES6+)
 - **后端**: Python 3.x + Flask
@@ -54,7 +228,11 @@ flowchart TB
 - **PHP 处理**: PHP-FPM
 - **运行环境**: ZeroTermux (Android)
 
-## 3. 路由定义
+---
+
+## API 定义
+
+### 路由定义
 
 | 路由 | 用途 |
 |------|------|
@@ -66,9 +244,7 @@ flowchart TB
 | `/monitor` | 系统监控 |
 | `/settings` | 账号设置 |
 
-## 4. API 定义
-
-### 4.1 认证 API
+### 认证 API
 
 ```typescript
 // POST /api/login
@@ -96,7 +272,7 @@ interface AuthCheckResponse {
 }
 ```
 
-### 4.2 网站管理 API
+### 网站管理 API
 
 ```typescript
 // GET /api/websites
@@ -126,7 +302,7 @@ interface CreateWebsiteRequest {
 // POST /api/websites/:id/restart
 ```
 
-### 4.3 数据库管理 API
+### 数据库管理 API
 
 ```typescript
 // GET /api/databases
@@ -150,7 +326,7 @@ interface CreateDatabaseRequest {
 // POST /api/databases/:name/restore
 ```
 
-### 4.4 文件管理 API
+### 文件管理 API
 
 ```typescript
 // GET /api/files?path=xxx
@@ -169,7 +345,7 @@ interface FileItem {
 // DELETE /api/files
 ```
 
-### 4.5 系统监控 API
+### 系统监控 API
 
 ```typescript
 // GET /api/system/info
@@ -197,7 +373,7 @@ interface SystemStats {
 }
 ```
 
-### 4.6 账号设置 API
+### 账号设置 API
 
 ```typescript
 // POST /api/account/password
@@ -208,114 +384,13 @@ interface ChangePasswordRequest {
 }
 ```
 
-## 5. 服务架构图
+---
 
-```mermaid
-flowchart LR
-    subgraph Flask[Flask 应用]
-        Routes[路由层]
-        Services[服务层]
-        Utils[工具层]
-    end
-
-    Routes --> Services
-    Services --> Utils
-
-    subgraph External[外部服务]
-        NginxCmd[Nginx 命令]
-        MySQLCmd[MySQL 命令]
-        SystemCmd[系统命令]
-    end
-
-    Utils --> NginxCmd
-    Utils --> MySQLCmd
-    Utils --> SystemCmd
-```
-
-## 6. 数据模型
-
-### 6.1 数据模型定义
-
-```mermaid
-erDiagram
-    ACCOUNT {
-        string username PK
-        string password_hash
-        datetime created_at
-        datetime updated_at
-    }
-
-    WEBSITE {
-        string id PK
-        string domain
-        string root_path
-        string php_version
-        string status
-        datetime created_at
-    }
-
-    DATABASE_BACKUP {
-        string id PK
-        string database_name
-        string file_path
-        integer size
-        datetime created_at
-    }
-
-    SETTING {
-        string key PK
-        string value
-        datetime updated_at
-    }
-```
-
-### 6.2 数据定义语言
-
-```sql
--- 账号表
-CREATE TABLE IF NOT EXISTS account (
-    username TEXT PRIMARY KEY,
-    password_hash TEXT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- 网站表
-CREATE TABLE IF NOT EXISTS websites (
-    id TEXT PRIMARY KEY,
-    domain TEXT UNIQUE NOT NULL,
-    root_path TEXT NOT NULL,
-    php_version TEXT DEFAULT '8.0',
-    status TEXT DEFAULT 'stopped',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- 数据库备份表
-CREATE TABLE IF NOT EXISTS database_backups (
-    id TEXT PRIMARY KEY,
-    database_name TEXT NOT NULL,
-    file_path TEXT NOT NULL,
-    size INTEGER DEFAULT 0,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- 设置表
-CREATE TABLE IF NOT EXISTS settings (
-    key TEXT PRIMARY KEY,
-    value TEXT,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- 初始管理员账号 (密码: admin123)
-INSERT OR IGNORE INTO account (username, password_hash)
-VALUES ('admin', 'pbkdf2:sha256:260000$...');
-```
-
-## 7. 项目结构
+## 项目结构
 
 ```
 ZeroPanel/
-├── README.md              # 项目技术文档
+├── README.md              # 项目文档
 ├── CHANGELOG.md           # 更新日志
 ├── VERSION                # 版本号
 ├── .gitignore             # Git 忽略规则
@@ -352,10 +427,51 @@ ZeroPanel/
         └── settings.html
 ```
 
-## 8. 安全考虑
+---
+
+## 安全考虑
 
 1. **认证安全**: 密码使用 pbkdf2 加密存储，Session 有效期控制
 2. **输入验证**: 所有用户输入进行严格验证和转义
 3. **SQL 注入防护**: 使用参数化查询
 4. **路径遍历防护**: 文件操作限制在允许目录内
 5. **命令注入防护**: 系统命令使用安全方式执行
+
+---
+
+## 开发指南
+
+### 本地运行测试
+
+```bash
+cd zeropanel
+pip3 install -r requirements.txt
+python3 test_verify.py
+```
+
+### 发布新版本
+
+```bash
+python3 build.py patch   # 或 minor / major
+```
+
+`build.py` 会自动：
+
+1. 更新 `VERSION` 文件
+2. 同步 `app.py` 中的 `PANEL_VERSION`
+3. 追加更新日志到 `CHANGELOG.md`
+4. 重新打包 `zeropanel_v2.zip`
+
+然后提交并推送：
+
+```bash
+git add -A
+git commit -m "release: v$(cat VERSION)"
+git push origin main
+```
+
+---
+
+## 许可证
+
+MIT License
