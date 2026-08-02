@@ -29,7 +29,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 
 # 面板版本信息
-PANEL_VERSION = '2.0.2'
+PANEL_VERSION = '2.0.3'
 
 # 云更新配置
 UPDATE_CONFIG = {
@@ -1856,16 +1856,39 @@ def api_check_update():
 
 def _backup_current_version(backup_file):
     """备份当前面板代码文件到 ZIP"""
-    exclude_names = {'data', '__pycache__', '.git', '.venv', 'venv'}
+    exclude_names = {'data', '__pycache__', '.git', '.venv', 'venv', 'update_backup', 'update_temp'}
+    base_resolved = BASE_DIR.resolve()
+    backed_count = 0
+    errors = []
+
     with zipfile.ZipFile(backup_file, 'w', zipfile.ZIP_DEFLATED) as zf:
-        for file_path in BASE_DIR.rglob('*'):
-            if not file_path.is_file():
-                continue
-            # 跳过数据目录、缓存、虚拟环境等
-            if any(part in exclude_names for part in file_path.parts):
-                continue
-            arcname = file_path.relative_to(BASE_DIR)
-            zf.write(file_path, arcname)
+        for root, dirs, files in os.walk(base_resolved, followlinks=False):
+            # 跳过排除目录，避免进入
+            dirs[:] = [d for d in dirs if d not in exclude_names and not d.startswith('.')]
+
+            for filename in files:
+                file_path = Path(root) / filename
+                # 跳过隐藏文件、备份文件和符号链接
+                if filename.startswith('.') or file_path.is_symlink():
+                    continue
+
+                # 安全校验：确保文件在 BASE_DIR 内
+                try:
+                    file_path.resolve().relative_to(base_resolved)
+                except ValueError:
+                    continue
+
+                arcname = file_path.relative_to(base_resolved)
+                try:
+                    zf.write(file_path, arcname)
+                    backed_count += 1
+                except Exception as e:
+                    errors.append(f'{arcname}: {e}')
+
+    if backed_count == 0:
+        raise RuntimeError('备份文件为空，可能面板目录没有可读文件' + ('; ' + '; '.join(errors[:3]) if errors else ''))
+
+    return backed_count
 
 
 def _safe_extract_update(zip_path, target_dir):
@@ -1909,7 +1932,7 @@ def api_do_update():
         backup_dir.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         backup_file = backup_dir / ('backup_' + timestamp + '.zip')
-        _backup_current_version(backup_file)
+        backed_count = _backup_current_version(backup_file)
 
         # 2. 下载新版本
         update_dir = DATA_DIR / 'update_temp'
@@ -1953,8 +1976,9 @@ def api_do_update():
 
         return jsonify({
             'success': True,
-            'message': '更新包下载完成，请重启面板使更新生效',
-            'backup_file': str(backup_file)
+            'message': f'更新完成，已备份 {backed_count} 个文件，请重启面板使更新生效',
+            'backup_file': str(backup_file),
+            'backed_count': backed_count
         })
 
     except HTTPError as e:
@@ -2007,29 +2031,50 @@ def api_rollback():
 def api_restart_panel():
     """重启面板"""
     try:
-        # 获取当前脚本路径
-        script_path = str(BASE_DIR / 'app.py')
+        script_path = str((BASE_DIR / 'app.py').resolve())
         log_file = str(DATA_DIR / 'panel.log')
-
-        # 停止当前进程
         current_pid = os.getpid()
+        panel_dir = str(BASE_DIR.resolve())
 
-        # 启动新的进程
+        # 使用独立子进程执行重启：先停止旧进程，释放端口，再启动新进程
+        restart_script = f'''
+import os, time, subprocess, signal
+pid = {current_pid}
+script = {repr(script_path)}
+workdir = {repr(panel_dir)}
+log = {repr(log_file)}
+
+time.sleep(2)
+try:
+    os.kill(pid, signal.SIGTERM)
+except ProcessLookupError:
+    pass
+
+# 等待端口释放
+time.sleep(2)
+
+# 启动新进程
+with open(log, 'a') as out, open(os.devnull, 'r') as stdin:
+    subprocess.Popen(
+        ['python3', script],
+        cwd=workdir,
+        stdin=stdin,
+        stdout=out,
+        stderr=subprocess.STDOUT,
+        start_new_session=True
+    )
+'''
         subprocess.Popen(
-            ['python3', script_path],
-            cwd=str(BASE_DIR),
-            stdout=open(log_file, 'a'),
-            stderr=subprocess.STDOUT,
+            ['python3', '-c', restart_script],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
             start_new_session=True
         )
 
-        # 延迟终止当前进程，让新进程有时间启动并响应请求
-        subprocess.Popen(['python3', '-c', f'import time, os; time.sleep(2); os.kill({current_pid}, 15)'],
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
-
         return jsonify({
             'success': True,
-            'message': '面板正在重启...'
+            'message': '面板正在重启，请等待 5-10 秒后刷新页面'
         })
 
     except Exception as e:
