@@ -115,7 +115,7 @@ def main():
     config = generate_nginx_config('example.com', '/home/user/www/example.com', '8.0', 8080)
     test('配置包含监听端口', 'listen 8080;' in config)
     test('配置包含域名', 'server_name example.com;' in config)
-    test('配置包含 PHP sock', 'php-fpm.sock' in config)
+    test('配置包含 PHP sock', 'php8.0-fpm.sock' in config)
     test('配置包含根目录', 'root "/home/user/www/example.com";' in config)
     test('配置文件路径一致', get_nginx_config_path('example.com', 8080).name == 'example.com_8080.conf')
     # 含空格路径的 nginx 配置
