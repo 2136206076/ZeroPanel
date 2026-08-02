@@ -969,6 +969,37 @@ a:hover {
     margin-top: 6px;
 }
 
+.form-check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.form-check input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--accent-primary);
+    cursor: pointer;
+}
+
+.form-check label {
+    margin-bottom: 0 !important;
+    cursor: pointer;
+}
+
+.db-info {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+.db-info .db-password {
+    font-family: monospace;
+    color: var(--accent-primary);
+    word-break: break-all;
+}
+
 /* ==================== 文件管理 ==================== */
 .breadcrumb {
     background: var(--bg-card);

@@ -82,10 +82,26 @@ function renderFileList(files) {
                             <line x1="12" y1="15" x2="12" y2="3"/>
                         </svg>
                     </button>
+                    ${isArchiveFile(file.name) ? `
+                    <button class="action-btn" onclick="showExtractModal('${currentPath}/${file.name}')">
+                        <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="17 8 12 3 7 8"/>
+                            <line x1="12" y1="3" x2="12" y2="15"/>
+                        </svg>
+                    </button>
+                    ` : ''}
                 ` : ''}
                 <button class="action-btn" onclick="showRenameModal('${currentPath}/${file.name}', '${file.name}')">
                     <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none">
                         <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
+                    </svg>
+                </button>
+                <button class="action-btn" onclick="compressItem('${currentPath}/${file.name}', '${file.name}')">
+                    <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="17 8 12 3 7 8"/>
+                        <line x1="12" y1="3" x2="12" y2="15"/>
                     </svg>
                 </button>
                 <button class="action-btn danger" onclick="deleteFile('${currentPath}/${file.name}')">
@@ -288,6 +304,74 @@ async function saveFile() {
         if (data.success) {
             showToast('保存成功', 'success');
             hideEditModal();
+        } else {
+            showToast(data.message, 'error');
+        }
+    } catch (error) {
+        showToast('网络错误', 'error');
+    }
+}
+
+// 判断是否为压缩文件
+function isArchiveFile(filename) {
+    const archives = ['.zip', '.tar.gz', '.tgz', '.tar.bz2', '.tbz2', '.tar.xz', '.txz', '.tar'];
+    const lower = filename.toLowerCase();
+    return archives.some(ext => lower.endsWith(ext));
+}
+
+// 显示解压弹窗
+function showExtractModal(path) {
+    currentEditFile = path;
+    document.getElementById('extract-modal').classList.add('show');
+    document.getElementById('extract-dest').value = currentPath;
+}
+
+// 隐藏解压弹窗
+function hideExtractModal() {
+    document.getElementById('extract-modal').classList.remove('show');
+}
+
+// 解压文件
+document.getElementById('extract-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const dest = document.getElementById('extract-dest').value;
+
+    try {
+        const response = await fetch('/api/files/extract', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: currentEditFile, dest })
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            showToast('解压成功', 'success');
+            hideExtractModal();
+            loadFiles(dest || currentPath);
+        } else {
+            showToast(data.message, 'error');
+        }
+    } catch (error) {
+        showToast('网络错误', 'error');
+    }
+});
+
+// 压缩文件/目录
+async function compressItem(path, name) {
+    const dest = currentPath + '/' + name + '.zip';
+    if (!confirm(`确定要压缩 ${name} 为 ${name}.zip 吗？`)) return;
+
+    try {
+        const response = await fetch('/api/files/compress', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ paths: [path], dest, format: 'zip' })
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            showToast('压缩成功', 'success');
+            loadFiles(currentPath);
         } else {
             showToast(data.message, 'error');
         }

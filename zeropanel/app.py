@@ -12,6 +12,8 @@ import time
 import uuid
 import shutil
 import hashlib
+import secrets
+import string
 import subprocess
 import sqlite3
 import zipfile
@@ -120,11 +122,14 @@ def init_db():
             php_version TEXT DEFAULT '8.0',
             status TEXT DEFAULT 'stopped',
             port INTEGER DEFAULT 8080,
+            db_name TEXT DEFAULT '',
+            db_user TEXT DEFAULT '',
+            db_password TEXT DEFAULT '',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
 
-    # 迁移：确保 websites 表存在 port 列（兼容旧数据库）
+    # 迁移：确保 websites 表存在所需列（兼容旧数据库）
     try:
         cursor.execute('PRAGMA table_info(websites)')
         columns = [row[1] for row in cursor.fetchall()]
@@ -134,6 +139,12 @@ def init_db():
             cursor.execute("ALTER TABLE websites ADD COLUMN php_version TEXT DEFAULT '8.0'")
         if 'status' not in columns:
             cursor.execute("ALTER TABLE websites ADD COLUMN status TEXT DEFAULT 'stopped'")
+        if 'db_name' not in columns:
+            cursor.execute("ALTER TABLE websites ADD COLUMN db_name TEXT DEFAULT ''")
+        if 'db_user' not in columns:
+            cursor.execute("ALTER TABLE websites ADD COLUMN db_user TEXT DEFAULT ''")
+        if 'db_password' not in columns:
+            cursor.execute("ALTER TABLE websites ADD COLUMN db_password TEXT DEFAULT ''")
     except Exception as e:
         print(f'迁移警告: {e}')
 
@@ -624,7 +635,7 @@ def api_list_websites():
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        cursor.execute('SELECT id, domain, root_path, php_version, status, port, created_at FROM websites ORDER BY created_at DESC')
+        cursor.execute('SELECT id, domain, root_path, php_version, status, port, db_name, db_user, db_password, created_at FROM websites ORDER BY created_at DESC')
         rows = cursor.fetchall()
         conn.close()
 
@@ -637,7 +648,10 @@ def api_list_websites():
                 'php_version': row[3],
                 'status': row[4],
                 'port': row[5],
-                'created_at': row[6]
+                'db_name': row[6],
+                'db_user': row[7],
+                'db_password': row[8],
+                'created_at': row[9]
             })
 
         return jsonify({'websites': websites})
@@ -653,6 +667,8 @@ def api_create_website():
     port = data.get('port', 8080)
     root = data.get('root', '').strip()
     php_version = data.get('php_version', '8.0')
+    create_db = data.get('create_database', False)
+    db_password_input = data.get('db_password', '').strip()
     
     if not domain:
         return jsonify({'success': False, 'message': '域名不能为空'})
@@ -718,14 +734,30 @@ def api_create_website():
     except Exception as e:
         return jsonify({'success': False, 'message': '创建配置失败: ' + str(e)})
 
+    # 可选：创建网站独立数据库
+    db_name = ''
+    db_user = ''
+    db_password = ''
+    if create_db:
+        safe_domain = re.sub(r'[^a-zA-Z0-9_]', '_', domain)[:32].strip('_')
+        if not safe_domain:
+            safe_domain = 'site_' + str(int(time.time()))
+        db_name = safe_domain
+        db_user = safe_domain
+        db_password = db_password_input if db_password_input else _random_password()
+
+        db_success, db_error = _create_website_database(db_name, db_user, db_password)
+        if not db_success:
+            return jsonify({'success': False, 'message': db_error})
+
     # 保存到数据库
     website_id = str(uuid.uuid4())
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     try:
         cursor.execute(
-            'INSERT INTO websites (id, domain, root_path, php_version, status, port) VALUES (?, ?, ?, ?, ?, ?)',
-            (website_id, domain, root, php_version, 'running', port)
+            'INSERT INTO websites (id, domain, root_path, php_version, status, port, db_name, db_user, db_password) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            (website_id, domain, root, php_version, 'running', port, db_name, db_user, db_password)
         )
         conn.commit()
     except sqlite3.IntegrityError:
@@ -750,14 +782,14 @@ def api_delete_website(website_id):
     """删除网站"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute('SELECT domain, root_path, port FROM websites WHERE id = ?', (website_id,))
+    cursor.execute('SELECT domain, root_path, port, db_name, db_user FROM websites WHERE id = ?', (website_id,))
     row = cursor.fetchone()
 
     if not row:
         conn.close()
         return jsonify({'success': False, 'message': '网站不存在'})
 
-    domain, root_path, port = row
+    domain, root_path, port, db_name, db_user = row
 
     # 删除 Nginx 配置（正常和停止状态）
     config_file = get_nginx_config_path(domain, port)
@@ -771,6 +803,10 @@ def api_delete_website(website_id):
     old_config_file = NGINX_CONF_DIR / (get_safe_domain(domain) + '.conf')
     if old_config_file.exists():
         old_config_file.unlink()
+
+    # 删除网站独立数据库
+    if db_name:
+        _delete_website_database(db_name, db_user)
 
     # 从数据库删除
     cursor.execute('DELETE FROM websites WHERE id = ?', (website_id,))
@@ -887,6 +923,48 @@ def api_restart_website(website_id):
             disabled_file.rename(config_file)
 
     return api_start_website(website_id)
+
+
+@app.route('/api/websites/<website_id>/db-reset', methods=['POST'])
+@login_required
+def api_reset_website_db_password(website_id):
+    """重置网站数据库密码"""
+    data = request.get_json(silent=True) or {}
+    new_password = data.get('password', '').strip()
+    if not new_password:
+        new_password = _random_password()
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('SELECT db_name, db_user FROM websites WHERE id = ?', (website_id,))
+    row = cursor.fetchone()
+
+    if not row or not row[0]:
+        conn.close()
+        return jsonify({'success': False, 'message': '该网站没有独立数据库'})
+
+    db_name, db_user = row
+
+    # 更新 MySQL 用户密码
+    safe_user = quote_string(db_user)
+    safe_pwd = quote_string(new_password)
+    success, _, stderr = mariadb_query(f"ALTER USER {safe_user}@'localhost' IDENTIFIED BY {safe_pwd}")
+    if not success:
+        # 老版本 MariaDB 不支持 ALTER USER，尝试 SET PASSWORD
+        success, _, stderr = mariadb_query(f"SET PASSWORD FOR {safe_user}@'localhost' = PASSWORD({safe_pwd})")
+    mariadb_query('FLUSH PRIVILEGES')
+
+    if not success:
+        conn.close()
+        return jsonify({'success': False, 'message': f'重置密码失败: {stderr}'})
+
+    # 更新本地记录
+    cursor.execute('UPDATE websites SET db_password = ? WHERE id = ?', (new_password, website_id))
+    conn.commit()
+    conn.close()
+
+    return jsonify({'success': True, 'message': '数据库密码已重置', 'password': new_password})
+
 
 # ==================== 数据库工具函数 ====================
 
@@ -1023,6 +1101,54 @@ def quote_identifier(name):
 def quote_string(value):
     """安全地转义 SQL 字符串字面量。"""
     return "'" + value.replace("'", "''").replace("\\", "\\\\") + "'"
+
+
+def _random_password(length=16):
+    """生成随机密码"""
+    alphabet = string.ascii_letters + string.digits
+    return ''.join(secrets.choice(alphabet) for _ in range(length))
+
+
+def _create_website_database(db_name, db_user, db_password):
+    """为网站创建数据库和用户，返回 (success, error)"""
+    try:
+        name_quoted = quote_identifier(db_name)
+    except ValueError:
+        return False, '数据库名包含非法字符'
+
+    # 创建数据库
+    success, _, stderr = mariadb_query(f'CREATE DATABASE IF NOT EXISTS {name_quoted} CHARACTER SET utf8mb4')
+    if not success:
+        return False, f'创建数据库失败: {stderr}'
+
+    # 创建用户并授权
+    if db_user and db_password:
+        if not re.match(r'^[a-zA-Z0-9_]+$', db_user):
+            return False, '数据库用户名只能包含字母、数字和下划线'
+        safe_user = quote_string(db_user)
+        safe_pwd = quote_string(db_password)
+        mariadb_query(f"CREATE USER IF NOT EXISTS {safe_user}@'localhost' IDENTIFIED BY {safe_pwd}")
+        mariadb_query(f"GRANT ALL PRIVILEGES ON {name_quoted}.* TO {safe_user}@'localhost'")
+        mariadb_query('FLUSH PRIVILEGES')
+
+    return True, ''
+
+
+def _delete_website_database(db_name, db_user):
+    """删除网站对应的数据库和用户"""
+    if not db_name:
+        return True, ''
+    try:
+        name_quoted = quote_identifier(db_name)
+    except ValueError:
+        return False, '数据库名包含非法字符'
+
+    mariadb_query(f'DROP DATABASE IF EXISTS {name_quoted}')
+    if db_user:
+        safe_user = quote_string(db_user)
+        mariadb_query(f"DROP USER IF EXISTS {safe_user}@'localhost'")
+        mariadb_query('FLUSH PRIVILEGES')
+    return True, ''
 
 
 # ==================== API：数据库管理 ====================
@@ -1487,6 +1613,110 @@ def api_write_file():
         return jsonify({'success': False, 'message': f'保存失败: {str(e)}'})
 
     return jsonify({'success': True, 'message': '保存成功'})
+
+
+@app.route('/api/files/extract', methods=['POST'])
+@login_required
+def api_extract_file():
+    """解压文件"""
+    data = request.get_json()
+    path = data.get('path', '')
+    dest = data.get('dest', '')
+
+    if not path:
+        return jsonify({'success': False, 'message': '请选择要解压的文件'})
+
+    safe_path, allowed = resolve_allowed_path(path)
+    if not allowed or safe_path is None:
+        return jsonify({'success': False, 'message': '文件路径非法'})
+
+    if not safe_path.exists() or not safe_path.is_file():
+        return jsonify({'success': False, 'message': '文件不存在'})
+
+    if dest:
+        safe_dest, allowed_dest = resolve_allowed_path(dest)
+    else:
+        safe_dest, allowed_dest = resolve_allowed_path(str(safe_path.parent))
+
+    if not allowed_dest or safe_dest is None:
+        return jsonify({'success': False, 'message': '目标路径非法'})
+
+    filename = safe_path.name.lower()
+    commands = {
+        '.zip': ['unzip', '-q', str(safe_path), '-d', str(safe_dest)],
+        '.tar.gz': ['tar', 'zxf', str(safe_path), '-C', str(safe_dest)],
+        '.tgz': ['tar', 'zxf', str(safe_path), '-C', str(safe_dest)],
+        '.tar.bz2': ['tar', 'jxf', str(safe_path), '-C', str(safe_dest)],
+        '.tbz2': ['tar', 'jxf', str(safe_path), '-C', str(safe_dest)],
+        '.tar.xz': ['tar', 'Jxf', str(safe_path), '-C', str(safe_dest)],
+        '.txz': ['tar', 'Jxf', str(safe_path), '-C', str(safe_dest)],
+        '.tar': ['tar', 'xf', str(safe_path), '-C', str(safe_dest)]
+    }
+
+    matched_cmd = None
+    for ext, cmd in commands.items():
+        if filename.endswith(ext):
+            matched_cmd = cmd
+            break
+
+    if matched_cmd is None:
+        return jsonify({'success': False, 'message': '不支持的压缩格式'})
+
+    success, stdout, stderr = run_command(matched_cmd, timeout=120)
+    if success:
+        return jsonify({'success': True, 'message': '解压成功'})
+    return jsonify({'success': False, 'message': f'解压失败: {stderr}'})
+
+
+@app.route('/api/files/compress', methods=['POST'])
+@login_required
+def api_compress_file():
+    """压缩文件/目录"""
+    data = request.get_json()
+    paths = data.get('paths', [])
+    dest = data.get('dest', '')
+    archive_format = data.get('format', 'zip')
+
+    if not paths:
+        return jsonify({'success': False, 'message': '请选择要压缩的文件'})
+
+    allowed_paths = []
+    for p in paths:
+        safe_p, allowed = resolve_allowed_path(p)
+        if not allowed or safe_p is None or not safe_p.exists():
+            return jsonify({'success': False, 'message': f'路径非法或不存在: {p}'})
+        allowed_paths.append(safe_p)
+
+    if not dest:
+        return jsonify({'success': False, 'message': '请指定压缩文件名'})
+
+    safe_dest, allowed = resolve_allowed_path(dest)
+    if not allowed or safe_dest is None:
+        return jsonify({'success': False, 'message': '压缩文件路径非法'})
+
+    base_dir = allowed_paths[0].parent
+    names = [p.name for p in allowed_paths]
+
+    try:
+        if archive_format == 'zip':
+            if not str(safe_dest).lower().endswith('.zip'):
+                safe_dest = safe_dest.with_name(safe_dest.name + '.zip')
+            cmd = ['zip', '-r', str(safe_dest)] + names
+            success, stdout, stderr = run_command(cmd, timeout=120)
+        elif archive_format in ('tar.gz', 'tgz'):
+            if not str(safe_dest).lower().endswith('.tar.gz'):
+                safe_dest = safe_dest.with_name(safe_dest.name + '.tar.gz')
+            cmd = ['tar', 'zcf', str(safe_dest)] + names
+            success, stdout, stderr = run_command(cmd, timeout=120)
+        else:
+            return jsonify({'success': False, 'message': '不支持的压缩格式'})
+
+        if success:
+            return jsonify({'success': True, 'message': '压缩成功'})
+        return jsonify({'success': False, 'message': f'压缩失败: {stderr}'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'操作失败: {str(e)}'})
+
 
 # ==================== API：系统监控 ====================
 

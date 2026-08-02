@@ -209,7 +209,34 @@
             </div>
         </div>
     </div>
-    
+
+    <!-- 解压文件弹窗 -->
+    <div class="modal" id="extract-modal">
+        <div class="modal-overlay" onclick="hideExtractModal()"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>解压文件</h2>
+                <button class="modal-close" onclick="hideExtractModal()">
+                    <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+            <form id="extract-form" class="modal-form">
+                <div class="form-group">
+                    <label>解压到</label>
+                    <input type="text" id="extract-dest" name="dest" placeholder="目标目录路径" required>
+                    <small class="form-hint">留空则解压到当前目录</small>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="hideExtractModal()">取消</button>
+                    <button type="submit" class="btn btn-primary">解压</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <div id="toast-container"></div>
     
     <script src="/static/js/app.js"></script>

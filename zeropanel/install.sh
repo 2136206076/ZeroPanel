@@ -367,7 +367,7 @@ install_termux() {
     # 步骤 2: 安装系统依赖
     print_step 2 $total_steps "安装系统依赖"
     echo -e "  ${CYAN}正在安装 Python、Nginx、MariaDB、PHP-FPM、curl、unzip...${NC}"
-    if pkg install -y python nginx mariadb php-fpm curl unzip 2>&1 | tail -n 3; then
+    if pkg install -y python nginx mariadb php-fpm curl unzip zip 2>&1 | tail -n 3; then
         print_success "系统依赖安装完成"
     else
         print_error "系统依赖安装失败"

@@ -116,13 +116,14 @@
                                     <th>根目录</th>
                                     <th>PHP版本</th>
                                     <th>状态</th>
+                                    <th>数据库</th>
                                     <th>创建时间</th>
                                     <th>操作</th>
                                 </tr>
                             </thead>
                             <tbody id="website-list">
                                 <tr class="empty-row">
-                                    <td colspan="7">
+                                    <td colspan="8">
                                         <div class="empty-state">
                                             <svg viewBox="0 0 24 24" width="48" height="48" stroke="#4a4a6a" stroke-width="2" fill="none">
                                                 <circle cx="12" cy="12" r="10"/>
@@ -176,6 +177,16 @@
                         <option value="8.0">PHP 8.0</option>
                         <option value="7.4">PHP 7.4</option>
                     </select>
+                </div>
+                <div class="form-group form-check">
+                    <input type="checkbox" id="create-database" name="create_database">
+                    <label for="create-database">同时创建数据库</label>
+                    <small class="form-hint">勾选后会自动创建与网站同名的数据库和用户</small>
+                </div>
+                <div class="form-group" id="db-password-row" style="display: none;">
+                    <label>数据库密码</label>
+                    <input type="text" id="db-password" name="db_password" placeholder="留空则自动生成随机密码">
+                    <small class="form-hint">数据库用户名与网站域名一致</small>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" onclick="hideCreateModal()">取消</button>
