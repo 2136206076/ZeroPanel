@@ -27,18 +27,136 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 
 # 面板版本信息
-PANEL_VERSION = '2.0.1'
+PANEL_VERSION = '2.1.0'
 
 # 云更新配置
 UPDATE_CONFIG = {
     'version_url': 'https://raw.githubusercontent.com/2136206076/ZeroPanel/refs/heads/main/VERSION',
-    'download_url': 'https://raw.githubusercontent.com/2136206076/ZeroPanel/f53f78b1b5b569a9b08ae526dc988b2ee92e649e/zeropanel_v2.zip',
+    'download_url': 'https://raw.githubusercontent.com/2136206076/ZeroPanel/main/zeropanel_v2.zip',
     'release_notes_url': 'https://raw.githubusercontent.com/2136206076/ZeroPanel/refs/heads/main/CHANGELOG.md'
 }
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB
 CORS(app)
+
+# ==================== 运行环境检测与路径配置 ====================
+
+def detect_environment():
+    """检测运行环境：termux 或 proot"""
+    env = {
+        'type': 'termux',
+        'prefix': os.environ.get('PREFIX', '/data/data/com.termux/files/usr'),
+        'is_proot': False,
+        'distro': 'Android/Termux',
+        'has_apt': False,
+        'has_pkg': False
+    }
+
+    # 检测 pkg/apt 命令
+    if command_exists('pkg'):
+        env['has_pkg'] = True
+    if command_exists('apt'):
+        env['has_apt'] = True
+
+    # 检测 proot 环境
+    os_release = Path('/etc/os-release')
+    if os_release.exists():
+        content = os_release.read_text(errors='ignore').lower()
+        if 'ubuntu' in content or 'debian' in content:
+            env['type'] = 'proot'
+            env['prefix'] = ''
+            env['is_proot'] = True
+            env['has_pkg'] = False
+            if 'ubuntu' in content:
+                env['distro'] = 'Ubuntu'
+            elif 'debian' in content:
+                env['distro'] = 'Debian'
+
+    return env
+
+
+ENV = detect_environment()
+
+
+class EnvPaths:
+    """根据环境动态生成系统路径"""
+
+    def __init__(self, env):
+        self.env = env
+        self.prefix = env['prefix']
+
+    def _p(self, *parts):
+        """拼接路径，proot 下无前缀"""
+        if self.prefix:
+            return Path(self.prefix).joinpath(*parts)
+        return Path('/').joinpath(*parts)
+
+    @property
+    def nginx_conf_dir(self):
+        return self._p('etc', 'nginx', 'conf.d')
+
+    @property
+    def nginx_main_conf(self):
+        return self._p('etc', 'nginx', 'nginx.conf')
+
+    @property
+    def nginx_log_dir(self):
+        return self._p('var', 'log', 'nginx')
+
+    @property
+    def run_dir(self):
+        # Proot 优先使用 /run，不存在则回退 /var/run
+        if not self.prefix:
+            run = Path('/run')
+            if run.exists() or Path('/var/run').exists():
+                return run if run.exists() else Path('/var/run')
+        return self._p('var', 'run')
+
+    @property
+    def php_fpm_pool_dir(self):
+        """返回 PHP-FPM 默认池配置目录（用于写入新池）"""
+        if self.env['type'] == 'proot':
+            # Debian/Ubuntu 默认使用当前系统 PHP 版本的 pool.d
+            for ver in ['8.3', '8.2', '8.1', '8.0', '7.4']:
+                p = Path(f'/etc/php/{ver}/fpm/pool.d')
+                if p.exists():
+                    return p
+            return Path('/etc/php/8.2/fpm/pool.d')
+        return self._p('etc', 'php-fpm.d')
+
+    def php_fpm_pool_path(self, php_version):
+        """返回指定 PHP 版本的池配置文件路径"""
+        if self.env['type'] == 'proot':
+            return Path(f'/etc/php/{php_version}/fpm/pool.d/www.conf')
+        return self._p('etc', 'php-fpm.d', 'www.conf')
+
+    def php_fpm_sock(self, php_version):
+        """返回指定 PHP 版本的 socket 路径"""
+        if self.env['type'] == 'proot':
+            return f'/run/php/php{php_version}-fpm.sock'
+        return str(self.run_dir / 'php-fpm.sock')
+
+    def php_fpm_cmd(self, php_version):
+        """返回指定 PHP 版本的 fpm 启动命令"""
+        if self.env['type'] == 'proot':
+            return f'php-fpm{php_version}'
+        return 'php-fpm'
+
+    @property
+    def mysql_conf_dir(self):
+        return self._p('etc', 'mysql')
+
+    @property
+    def mysql_run_dir(self):
+        return self._p('var', 'run', 'mysqld')
+
+    @property
+    def mysql_data_dir(self):
+        return self._p('var', 'lib', 'mysql')
+
+
+PATHS = EnvPaths(ENV)
 
 # 配置
 BASE_DIR = Path(__file__).parent.resolve()
@@ -47,10 +165,13 @@ DB_PATH = DATA_DIR / 'panel.db'
 BACKUP_DIR = DATA_DIR / 'backups'
 UPLOAD_DIR = DATA_DIR / 'uploads'
 WWW_DIR = Path.home() / 'www'
-NGINX_CONF_DIR = Path(os.environ.get('PREFIX', '/data/data/com.termux/files/usr')) / 'etc' / 'nginx' / 'conf.d'
+NGINX_CONF_DIR = PATHS.nginx_conf_dir
 
 # 允许的文件扩展名
 ALLOWED_EXTENSIONS = {'txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'zip', 'tar', 'gz', 'sql', 'php', 'html', 'css', 'js', 'json', 'xml', 'md'}
+
+# 可编辑的文本文件扩展名
+EDITABLE_EXTENSIONS = {'txt', 'php', 'html', 'css', 'js', 'json', 'xml', 'md', 'conf', 'ini', 'sh', 'py', 'log', 'sql', 'yml', 'yaml'}
 
 # 允许文件操作的根目录
 ALLOWED_ROOTS = [WWW_DIR, DATA_DIR]
@@ -197,7 +318,7 @@ def get_system_info():
     """获取系统信息"""
     info = {
         'hostname': 'localhost',
-        'os': 'Android/Termux',
+        'os': ENV['distro'],
         'kernel': 'Linux',
         'uptime': '0',
         'cpu_model': 'Unknown',
