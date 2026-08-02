@@ -463,7 +463,8 @@ def get_nginx_disabled_path(domain, port=8080):
 
 def generate_nginx_config(domain, root_path, php_version='8.0', port=8080):
     """生成 Nginx 配置"""
-    php_sock = '/data/data/com.termux/files/usr/var/run/php-fpm-' + php_version + '.sock'
+    # 使用统一的 PHP-FPM socket，由 install.sh 配置
+    php_sock = '/data/data/com.termux/files/usr/var/run/php-fpm.sock'
 
     config_lines = [
         'server {',

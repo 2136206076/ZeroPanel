@@ -59,6 +59,17 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
+# 检测 Python 命令
+ detect_python_cmd() {
+    if command_exists python3; then
+        echo "python3"
+    elif command_exists python; then
+        echo "python"
+    else
+        echo ""
+    fi
+}
+
 # 主安装流程
 main() {
     # 显示欢迎信息
@@ -76,13 +87,21 @@ main() {
         sleep 2
     fi
 
+    # 检查 PREFIX
+    if [ -z "$PREFIX" ]; then
+        PREFIX="/data/data/com.termux/files/usr"
+        export PREFIX
+    fi
+
     # 获取设备信息
     echo -e "  ${CYAN}检测环境...${NC}"
     local os_name=$(uname -s)
     local os_arch=$(uname -m)
+    PYTHON_CMD=$(detect_python_cmd)
     echo -e "    系统: ${WHITE}$os_name ${os_arch}${NC}"
     echo -e "    面板目录: ${WHITE}$PANEL_DIR${NC}"
     echo -e "    网站目录: ${WHITE}$WWW_DIR${NC}"
+    echo -e "    Python: ${WHITE}${PYTHON_CMD:-未检测到}${NC}"
     echo ""
 
     # 确认安装
@@ -90,7 +109,7 @@ main() {
     read -r
 
     # 步骤 1: 更新软件源
-    print_step 1 7 "更新软件源"
+    print_step 1 8 "更新软件源"
     echo -e "  ${CYAN}正在更新包管理器...${NC}"
     if pkg update -y 2>&1 | tail -n 5; then
         print_success "软件源更新完成"
@@ -100,9 +119,9 @@ main() {
     fi
 
     # 步骤 2: 安装依赖包
-    print_step 2 7 "安装依赖包"
+    print_step 2 8 "安装依赖包"
     echo -e "  ${CYAN}正在安装 Python、Nginx、MariaDB、PHP-FPM...${NC}"
-    if pkg install -y python python-pip nginx mariadb php-fpm 2>&1 | tail -n 3; then
+    if pkg install -y python nginx mariadb php-fpm 2>&1 | tail -n 3; then
         print_success "依赖包安装完成"
     else
         print_error "依赖包安装失败"
@@ -110,9 +129,18 @@ main() {
     fi
 
     # 步骤 3: 安装 Python 依赖
-    print_step 3 7 "安装 Python 依赖"
+    print_step 3 8 "安装 Python 依赖"
     echo -e "  ${CYAN}正在安装 Flask 及相关库...${NC}"
-    if pip install flask flask-cors werkzeug --break-system-packages 2>&1 | tail -n 2; then
+    if command_exists pip3; then
+        PIP_CMD="pip3"
+    elif command_exists pip; then
+        PIP_CMD="pip"
+    else
+        print_error "未找到 pip 命令"
+        exit 1
+    fi
+
+    if $PIP_CMD install flask flask-cors werkzeug 2>&1 | tail -n 2; then
         print_success "Python 依赖安装完成"
     else
         print_error "Python 依赖安装失败"
@@ -120,7 +148,7 @@ main() {
     fi
 
     # 步骤 4: 初始化 MariaDB
-    print_step 4 7 "初始化 MariaDB"
+    print_step 4 8 "初始化 MariaDB"
     echo -e "  ${CYAN}检查数据库目录...${NC}"
     if [ ! -d "$PREFIX/var/lib/mysql/mysql" ]; then
         echo -e "  ${CYAN}正在初始化数据库...${NC}"
@@ -135,47 +163,37 @@ main() {
     fi
 
     # 步骤 5: 创建必要目录
-    print_step 5 7 "创建目录结构"
+    print_step 5 8 "创建目录结构"
     echo -e "  ${CYAN}正在创建网站和日志目录...${NC}"
     mkdir -p "$WWW_DIR"
     mkdir -p "$DATA_DIR"
     mkdir -p "$PREFIX/etc/nginx/conf.d"
     mkdir -p "$PREFIX/var/log/nginx"
     mkdir -p "$PREFIX/var/run"
+    mkdir -p "$PREFIX/var/run/php-fpm"
     print_success "目录创建完成"
 
-    # 创建 mime.types 文件
-    MIME_TYPES_FILE="$PREFIX/etc/nginx/mime.types"
-    if [ ! -f "$MIME_TYPES_FILE" ]; then
-        echo -e "  ${CYAN}创建 MIME 类型配置...${NC}"
-        cat > "$MIME_TYPES_FILE" << MIMEEOF
-types {
-    text/html                             html htm shtml;
-    text/css                              css;
-    text/xml                              xml;
-    image/gif                             gif;
-    image/jpeg                            jpeg jpg;
-    image/png                             png;
-    application/javascript                js;
-    application/json                      json;
-    application/x-httpd-php               php;
-    application/octet-stream              bin exe dll;
-    application/zip                       zip;
-    application/x-gzip                    gz;
-    text/plain                            txt;
-    application/pdf                       pdf;
-    application/x-shockwave-flash         swf;
-}
-MIMEEOF
-        print_success "MIME 配置创建完成"
+    # 步骤 6: 配置 PHP-FPM
+    print_step 6 8 "配置 PHP-FPM"
+    echo -e "  ${CYAN}配置 PHP-FPM Socket...${NC}"
+
+    PHP_FPM_POOL="$PREFIX/etc/php-fpm.d/www.conf"
+    PHP_FPM_SOCK="$PREFIX/var/run/php-fpm.sock"
+
+    if [ -f "$PHP_FPM_POOL" ]; then
+        # 备份原配置
+        cp "$PHP_FPM_POOL" "$PHP_FPM_POOL.bak"
+        # 修改监听地址为统一 socket
+        sed -i "s|^listen =.*|listen = $PHP_FPM_SOCK|" "$PHP_FPM_POOL"
+        print_success "PHP-FPM 已配置监听 $PHP_FPM_SOCK"
     else
-        print_success "MIME 配置已存在"
+        print_warning "未找到 $PHP_FPM_POOL，请确认 php-fpm 已正确安装"
     fi
 
-    # 步骤 6: 配置 Nginx
-    print_step 6 7 "配置 Nginx"
+    # 步骤 7: 配置 Nginx
+    print_step 7 8 "配置 Nginx"
     NGINX_CONF="$PREFIX/etc/nginx/nginx.conf"
-    
+
     # 备份原配置
     if [ -f "$NGINX_CONF" ]; then
         cp "$NGINX_CONF" "$NGINX_CONF.bak"
@@ -183,8 +201,8 @@ MIMEEOF
     fi
 
     # 删除默认配置
-    rm -f "$PREFIX/etc/nginx/conf.d/default.conf" 2>/dev/null
-    rm -f "$PREFIX/etc/nginx/sites-enabled/default" 2>/dev/null
+    rm -f "$PREFIX/etc/nginx/conf.d/default.conf" 2>/dev/null || true
+    rm -f "$PREFIX/etc/nginx/sites-enabled/default" 2>/dev/null || true
 
     # 写入新配置
     echo -e "  ${CYAN}写入 Nginx 配置...${NC}"
@@ -200,72 +218,84 @@ events {
 http {
     include $PREFIX/etc/nginx/mime.types;
     default_type application/octet-stream;
-    
+
     sendfile on;
     keepalive_timeout 65;
-    
+    client_max_body_size 100M;
+
     gzip on;
     gzip_types text/plain text/css application/json application/javascript text/xml application/xml;
-    
+
     include $PREFIX/etc/nginx/conf.d/*.conf;
 }
 EOF
     print_success "Nginx 配置完成"
 
-    # 步骤 7: 创建快捷命令
-    print_step 7 7 "配置快捷命令"
+    # 步骤 8: 创建快捷命令
+    print_step 8 8 "配置快捷命令"
     echo -e "  ${CYAN}创建 zeropanel 命令...${NC}"
-    
+
     mkdir -p "$HOME/bin"
-    
-    cat > "$HOME/bin/zeropanel" << 'SCRIPT'
+
+    cat > "$HOME/bin/zeropanel" << SCRIPT
 #!/data/data/com.termux/files/usr/bin/bash
 
 # ZeroPanel 快捷命令脚本
-PANEL_DIR="$HOME/zeropanel"
-LOG_FILE="$PANEL_DIR/data/panel.log"
-DATA_DIR="$PANEL_DIR/data"
+PANEL_DIR="\$HOME/zeropanel"
+LOG_FILE="\$PANEL_DIR/data/panel.log"
+DATA_DIR="\$PANEL_DIR/data"
 
-mkdir -p "$DATA_DIR"
+mkdir -p "\$DATA_DIR"
+
+# 检测 Python 命令
+python_cmd() {
+    if command -v python3 >/dev/null 2>&1; then
+        echo "python3"
+    elif command -v python >/dev/null 2>&1; then
+        echo "python"
+    else
+        echo ""
+    fi
+}
 
 # 服务检测函数
 check_service() {
-    local service_name="$1"
-    local pattern="$2"
-    
+    local pattern="\$1"
+
     # 使用 /proc 目录检测
-    if ls /proc/[0-9]*/cmdline 2>/dev/null | xargs -r grep -l -z "$pattern" 2>/dev/null | head -1 > /dev/null; then
+    if ls /proc/[0-9]*/cmdline 2>/dev/null | xargs -r grep -l -z "\$pattern" 2>/dev/null | head -1 > /dev/null; then
         echo -e "\033[0;32m运行中\033[0m"
         return
     fi
-    
+
     # 备用：检查 exe 链接名
     for pid_dir in /proc/[0-9]*; do
-        [ -d "$pid_dir" ] || continue
-        exe_link=$(readlink "$pid_dir/exe" 2>/dev/null || true)
-        if [ -n "$exe_link" ] && (echo "$exe_link" | grep -qE "$pattern$"); then
+        [ -d "\$pid_dir" ] || continue
+        exe_link=\$(readlink "\$pid_dir/exe" 2>/dev/null || true)
+        if [ -n "\$exe_link" ] && (echo "\$exe_link" | grep -qE "\$pattern\$"); then
             echo -e "\033[0;32m运行中\033[0m"
             return
         fi
     done
-    
+
     echo -e "\033[0;31m已停止\033[0m"
 }
 
 check_nginx() {
-    check_service "Nginx" "nginx"
+    check_service "nginx"
 }
 
 check_mysql() {
-    check_service "MariaDB" "(mysqld|mariadbd)"
+    check_service "(mysqld|mariadbd)"
 }
 
 check_php() {
-    check_service "PHP-FPM" "php-fpm"
+    check_service "php-fpm"
 }
 
 check_panel() {
-    if pgrep -f "python app.py" > /dev/null; then
+    local py_cmd=\$(python_cmd)
+    if [ -n "\$py_cmd" ] && pgrep -f "\$py_cmd app.py" > /dev/null; then
         echo -e "\033[0;32m运行中\033[0m"
     else
         echo -e "\033[0;31m已停止\033[0m"
@@ -273,14 +303,20 @@ check_panel() {
 }
 
 # 主命令处理
-case "$1" in
+case "\$1" in
     start)
         echo -e "\033[1;37m启动 ZeroPanel...\033[0m"
-        cd "$PANEL_DIR"
+        cd "\$PANEL_DIR"
+        PY_CMD=\$(python_cmd)
+
+        if [ -z "\$PY_CMD" ]; then
+            echo -e "  \033[0;31m✗\033[0m 未找到 python3 或 python"
+            exit 1
+        fi
 
         # 启动面板
-        if ! pgrep -f "python app.py" > /dev/null; then
-            nohup python app.py > "$LOG_FILE" 2>&1 &
+        if ! pgrep -f "\$PY_CMD app.py" > /dev/null; then
+            nohup \$PY_CMD app.py > "\$LOG_FILE" 2>&1 &
             echo -e "  \033[0;32m✓\033[0m Panel 已启动"
         else
             echo -e "  \033[0;33m⚠\033[0m Panel 已在运行"
@@ -288,7 +324,13 @@ case "$1" in
 
         # 启动 MariaDB
         if ! pgrep -x mysqld > /dev/null && ! pgrep -x mariadbd > /dev/null; then
-            nohup mysqld_safe > /dev/null 2>&1 &
+            if command -v mysqld_safe >/dev/null 2>&1; then
+                nohup mysqld_safe > /dev/null 2>&1 &
+            elif command -v mysqld >/dev/null 2>&1; then
+                nohup mysqld > /dev/null 2>&1 &
+            else
+                echo -e "  \033[0;33m⚠\033[0m 未找到 MariaDB 启动命令"
+            fi
             sleep 3
             echo -e "  \033[0;32m✓\033[0m MariaDB 已启动"
         else
@@ -317,38 +359,41 @@ case "$1" in
         ;;
     stop)
         echo -e "\033[1;37m停止 ZeroPanel...\033[0m"
-        pkill -f "python app.py" 2>/dev/null
-        nginx -s stop 2>/dev/null
-        pkill -x mysqld 2>/dev/null
-        pkill -x mariadbd 2>/dev/null
-        pkill -f php-fpm 2>/dev/null
+        PY_CMD=\$(python_cmd)
+        if [ -n "\$PY_CMD" ]; then
+            pkill -f "\$PY_CMD app.py" 2>/dev/null || true
+        fi
+        nginx -s stop 2>/dev/null || true
+        pkill -x mysqld 2>/dev/null || true
+        pkill -x mariadbd 2>/dev/null || true
+        pkill -f php-fpm 2>/dev/null || true
         echo -e "  \033[0;32m✓\033[0m ZeroPanel 已停止"
         ;;
     restart)
-        "$0" stop
+        "\$0" stop
         sleep 2
-        "$0" start
+        "\$0" start
         ;;
     status)
         echo -e "\033[1;37m服务状态:\033[0m"
-        echo "  Panel:   $(check_panel)"
-        echo "  Nginx:   $(check_nginx)"
-        echo "  MariaDB: $(check_mysql)"
-        echo "  PHP-FPM: $(check_php)"
+        echo "  Panel:   \$(check_panel)"
+        echo "  Nginx:   \$(check_nginx)"
+        echo "  MariaDB: \$(check_mysql)"
+        echo "  PHP-FPM: \$(check_php)"
         echo ""
         echo -e "\033[0;36m访问地址: http://localhost:5000\033[0m"
         ;;
     log)
-        if [ -f "$LOG_FILE" ]; then
+        if [ -f "\$LOG_FILE" ]; then
             echo -e "\033[1;37m最近 50 行日志:\033[0m"
-            tail -n 50 "$LOG_FILE"
+            tail -n 50 "\$LOG_FILE"
         else
             echo -e "\033[0;31m日志文件不存在\033[0m"
         fi
         ;;
     restart-nginx)
         echo -e "\033[1;37m重启 Nginx...\033[0m"
-        nginx -s stop 2>/dev/null
+        nginx -s stop 2>/dev/null || true
         sleep 1
         nginx 2>/dev/null
         echo -e "  \033[0;32m✓\033[0m Nginx 已重启"
@@ -370,7 +415,7 @@ case "$1" in
         ;;
 esac
 SCRIPT
-    
+
     chmod +x "$HOME/bin/zeropanel"
     print_success "快捷命令创建完成"
 
@@ -388,31 +433,39 @@ SCRIPT
     # 启动服务
     echo ""
     echo -e "${WHITE}正在启动服务...${NC}"
-    
+
+    PY_CMD=$(detect_python_cmd)
+
     # 启动 MariaDB
     if ! pgrep -x mysqld > /dev/null && ! pgrep -x mariadbd > /dev/null; then
         echo -e "  ${CYAN}启动 MariaDB...${NC}"
-        nohup mysqld_safe > /dev/null 2>&1 &
+        if command_exists mysqld_safe; then
+            nohup mysqld_safe > /dev/null 2>&1 &
+        elif command_exists mysqld; then
+            nohup mysqld > /dev/null 2>&1 &
+        else
+            print_warning "未找到 MariaDB 启动命令"
+        fi
         sleep 3
     fi
 
     # 启动 PHP-FPM
     if ! pgrep -f php-fpm > /dev/null; then
         echo -e "  ${CYAN}启动 PHP-FPM...${NC}"
-        php-fpm 2>/dev/null
+        php-fpm 2>/dev/null || print_warning "PHP-FPM 启动失败，请检查配置"
     fi
 
     # 启动 Nginx
     if ! pgrep -x nginx > /dev/null; then
         echo -e "  ${CYAN}启动 Nginx...${NC}"
-        nginx 2>/dev/null
+        nginx 2>/dev/null || print_warning "Nginx 启动失败，请检查配置"
     fi
 
     # 启动面板
-    if ! pgrep -f "python app.py" > /dev/null; then
+    if [ -n "$PY_CMD" ] && ! pgrep -f "$PY_CMD app.py" > /dev/null; then
         echo -e "  ${CYAN}启动 ZeroPanel...${NC}"
         cd "$PANEL_DIR"
-        nohup python app.py > "$DATA_DIR/panel.log" 2>&1 &
+        nohup "$PY_CMD" app.py > "$DATA_DIR/panel.log" 2>&1 &
         sleep 2
     fi
 
@@ -434,6 +487,8 @@ SCRIPT
     echo -e "    ${BLUE}zeropanel status${NC}   - 查看状态"
     echo -e "    ${BLUE}zeropanel log${NC}      - 查看日志"
     echo -e "    ${BLUE}zeropanel help${NC}     - 显示帮助"
+    echo ""
+    echo -e "  ${YELLOW}提示：如果新终端无法使用 zeropanel 命令，请执行：source ~/.bashrc${NC}"
     echo ""
     print_separator
     echo -e "              ${CYAN}感谢使用 ZeroPanel！${NC}"
