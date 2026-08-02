@@ -29,7 +29,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 
 # 面板版本信息
-PANEL_VERSION = '2.0.3'
+PANEL_VERSION = '2.0.4'
 
 # 云更新配置
 UPDATE_CONFIG = {
@@ -412,49 +412,40 @@ def get_system_stats():
     
     try:
         # CPU 使用率：采样两次 /proc/stat，计算间隔内的使用率
-        stat_file = Path('/proc/stat')
-        if stat_file.exists():
-            def read_cpu_times():
-                with open(stat_file, 'r') as f:
+        # 优先读取总 cpu 行，部分 Android 内核只有 cpu0/cpu1... 等单核行，需要累加
+        def read_cpu_times():
+            total = 0
+            idle = 0
+            found = False
+            try:
+                with open('/proc/stat', 'r') as f:
                     for line in f:
-                        line = line.strip()
-                        if line.startswith('cpu ') or line.startswith('cpu\t'):
-                            parts = line.split()
-                            if len(parts) >= 8:
-                                try:
-                                    return sum(int(x) for x in parts[1:8])
-                                except ValueError:
-                                    return None
-                return None
+                        parts = line.split()
+                        if not parts:
+                            continue
+                        if parts[0] == 'cpu':
+                            # 总 cpu 行直接返回
+                            return sum(int(x) for x in parts[1:8]), int(parts[4])
+                        if parts[0].startswith('cpu') and parts[0][3:].isdigit():
+                            total += sum(int(x) for x in parts[1:8])
+                            idle += int(parts[4])
+                            found = True
+                if found:
+                    return total, idle
+            except Exception:
+                pass
+            return None, None
 
-            total1 = read_cpu_times()
-            idle1 = None
-            if total1 is not None:
-                with open(stat_file, 'r') as f:
-                    for line in f:
-                        line = line.strip()
-                        if line.startswith('cpu ') or line.startswith('cpu\t'):
-                            parts = line.split()
-                            idle1 = int(parts[4])
-                            break
-            if total1 is not None and idle1 is not None:
-                time.sleep(0.3)
-                total2 = read_cpu_times()
-                idle2 = None
-                if total2 is not None:
-                    with open(stat_file, 'r') as f:
-                        for line in f:
-                            line = line.strip()
-                            if line.startswith('cpu ') or line.startswith('cpu\t'):
-                                parts = line.split()
-                                idle2 = int(parts[4])
-                                break
-                if total2 is not None and idle2 is not None:
-                    total_delta = total2 - total1
-                    idle_delta = idle2 - idle1
-                    if total_delta > 0:
-                        stats['cpu_usage'] = round((1 - idle_delta / total_delta) * 100, 1)
-        
+        total1, idle1 = read_cpu_times()
+        if total1 is not None and idle1 is not None:
+            time.sleep(0.3)
+            total2, idle2 = read_cpu_times()
+            if total2 is not None and idle2 is not None:
+                total_delta = total2 - total1
+                idle_delta = idle2 - idle1
+                if total_delta > 0:
+                    stats['cpu_usage'] = round((1 - idle_delta / total_delta) * 100, 1)
+
         # 内存使用
         mem_file = Path('/proc/meminfo')
         if mem_file.exists():
@@ -465,31 +456,28 @@ def get_system_stats():
                     if line.startswith('MemTotal:'):
                         try:
                             mem_total = int(line.split()[1]) * 1024
-                        except:
+                        except Exception:
                             pass
                     elif line.startswith('MemAvailable:'):
                         try:
                             mem_available = int(line.split()[1]) * 1024
-                        except:
+                        except Exception:
                             pass
                 if mem_total > 0:
                     stats['memory_used'] = mem_total - mem_available
                     stats['memory_usage'] = round((mem_total - mem_available) / mem_total * 100, 1)
-        
-        # 磁盘使用
-        success, stdout, _ = run_command(['df', '-k', '/'])
-        if success and stdout:
-            lines = stdout.strip().split('\n')
-            if len(lines) >= 2:
-                parts = lines[1].split()
-                if len(parts) >= 4:
-                    try:
-                        total = int(parts[1]) * 1024
-                        used = int(parts[2]) * 1024
-                        stats['disk_used'] = used
-                        stats['disk_usage'] = round(used / total * 100, 1) if total > 0 else 0
-                    except:
-                        pass
+
+        # 磁盘使用：使用 statvfs 避免不同平台 df 输出格式差异
+        try:
+            st = os.statvfs('/')
+            total = st.f_blocks * st.f_frsize
+            avail = st.f_bavail * st.f_frsize
+            used = total - avail
+            if total > 0:
+                stats['disk_used'] = used
+                stats['disk_usage'] = round(used / total * 100, 1)
+        except Exception:
+            pass
         
         # 网络流量
         net_file = Path('/proc/net/dev')
