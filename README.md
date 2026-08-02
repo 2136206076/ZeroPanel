@@ -314,34 +314,42 @@ VALUES ('admin', 'pbkdf2:sha256:260000$...');
 ## 7. 项目结构
 
 ```
-zeropanel/
-├── app.py                 # Flask 主应用
-├── install.sh             # 一键安装脚本
-├── requirements.txt       # Python 依赖
-├── data/                  # 数据目录
-│   ├── panel.db          # SQLite 数据库
-│   ├── backups/           # 数据库备份
-│   └── uploads/           # 上传文件
-├── static/                # 静态资源
-│   ├── css/
-│   │   └── style.css
-│   ├── js/
-│   │   ├── app.js
-│   │   ├── dashboard.js
-│   │   ├── websites.js
-│   │   ├── databases.js
-│   │   ├── files.js
-│   │   └── monitor.js
-│   └── img/
-│       └── logo.svg
-└── templates/             # HTML 模板
-    ├── login.html
-    ├── dashboard.html
-    ├── websites.html
-    ├── databases.html
-    ├── files.html
-    ├── monitor.html
-    └── settings.html
+ZeroPanel/
+├── README.md              # 项目技术文档
+├── CHANGELOG.md           # 更新日志
+├── VERSION                # 版本号
+├── .gitignore             # Git 忽略规则
+└── zeropanel/             # 面板主程序
+    ├── app.py             # Flask 主应用
+    ├── install.sh         # 一键安装脚本
+    ├── requirements.txt   # Python 依赖
+    ├── test_verify.py     # 功能验证测试脚本
+    ├── data/              # 运行时数据（自动生成，不入库）
+    │   ├── panel.db       # SQLite 数据库
+    │   ├── .secret_key    # 会话密钥
+    │   ├── backups/       # 数据库备份
+    │   └── uploads/       # 上传文件
+    ├── static/            # 静态资源
+    │   ├── css/
+    │   │   └── style.css
+    │   ├── js/
+    │   │   ├── app.js
+    │   │   ├── dashboard.js
+    │   │   ├── websites.js
+    │   │   ├── databases.js
+    │   │   ├── files.js
+    │   │   ├── monitor.js
+    │   │   └── settings.js
+    │   └── img/
+    │       └── logo.svg
+    └── templates/         # HTML 模板
+        ├── login.html
+        ├── dashboard.html
+        ├── websites.html
+        ├── databases.html
+        ├── files.html
+        ├── monitor.html
+        └── settings.html
 ```
 
 ## 8. 安全考虑
