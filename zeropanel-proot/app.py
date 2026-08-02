@@ -33,9 +33,9 @@ PANEL_VERSION = '2.0.2'
 
 # 云更新配置
 UPDATE_CONFIG = {
-    'version_url': 'https://raw.githubusercontent.com/2136206076/ZeroPanel/refs/heads/main/VERSION',
-    'download_url': 'https://raw.githubusercontent.com/2136206076/ZeroPanel/f53f78b1b5b569a9b08ae526dc988b2ee92e649e/zeropanel_v2.zip',
-    'release_notes_url': 'https://raw.githubusercontent.com/2136206076/ZeroPanel/refs/heads/main/CHANGELOG.md'
+    'version_url': 'https://raw.githubusercontent.com/2136206076/ZeroPanel/main/VERSION',
+    'download_url': 'https://raw.githubusercontent.com/2136206076/ZeroPanel/main/zeropanel_v2.zip',
+    'release_notes_url': 'https://raw.githubusercontent.com/2136206076/ZeroPanel/main/CHANGELOG.md'
 }
 
 app = Flask(__name__)
@@ -88,6 +88,8 @@ if IS_PROOT and IS_DEBIAN_UBUNTU:
     NGINX_CONF_DIR = Path('/etc/nginx/conf.d')
     PHP_FPM_DIR = Path('/etc/php')
     WEB_ROOT_BASE = Path('/var/www')
+    # Proot 高级版使用自己的分发包
+    UPDATE_CONFIG['download_url'] = 'https://raw.githubusercontent.com/2136206076/ZeroPanel/main/zeropanel-proot_v2.zip'
 else:
     # Termux 环境：保持原路径
     TERMUX_PREFIX = Path(os.environ.get('PREFIX', '/data/data/com.termux/files/usr'))
