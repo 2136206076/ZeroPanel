@@ -64,26 +64,40 @@ detect_environment() {
     local proot_marker=0
     local distro=""
 
-    # 检测 Proot 环境
-    if [ -f "/proc/1/cgroup" ]; then
-        if grep -qi "proot\|lxc\|docker" /proc/1/cgroup 2>/dev/null; then
-            proot_marker=1
-        fi
-    fi
-    if [ -n "$PROOT_DISTRO" ] || [ -n "$PROOT_NO_SECCOMP" ]; then
-        proot_marker=1
-    fi
-    if [ -f "/.dockerenv" ]; then
-        proot_marker=1
-    fi
-
     # 检测系统发行版
     if [ -f "/etc/os-release" ]; then
         distro=$(grep -E '^ID=' /etc/os-release | cut -d= -f2 | tr -d '"')
     fi
 
+    # 检测 Proot 环境标记
+    if [ -f "/proc/1/cgroup" ]; then
+        if grep -qiE "proot|lxc|docker|containerd|buildd" /proc/1/cgroup 2>/dev/null; then
+            proot_marker=1
+        fi
+    fi
+    if [ -n "$PROOT_DISTRO" ] || [ -n "$PROOT_NO_SECCOMP" ] || [ -n "$PROOT_NO_PIVOT_ROOT" ]; then
+        proot_marker=1
+    fi
+    if [ -f "/.dockerenv" ]; then
+        proot_marker=1
+    fi
+    # proot 中 /proc/1/root 通常不存在或无法访问
+    if [ -d "/proc/1" ] && [ ! -r "/proc/1/root" ]; then
+        proot_marker=1
+    fi
+
+    # 检测 Termux
+    local is_termux=0
+    if [ -n "$TERMUX_VERSION" ]; then
+        is_termux=1
+    fi
+    if [ -n "$PREFIX" ] && [[ "$PREFIX" == *"com.termux"* ]]; then
+        is_termux=1
+    fi
+
     # Proot + Debian/Ubuntu
-    if [ "$proot_marker" -eq 1 ] && { [ "$distro" = "debian" ] || [ "$distro" = "ubuntu" ]; }; then
+    # Termux 不会自识别为 Debian/Ubuntu，因此 Debian/Ubuntu 直接视为 Proot
+    if [ "$distro" = "debian" ] || [ "$distro" = "ubuntu" ]; then
         ENV_TYPE="proot"
         PANEL_DIR="/var/www/zeropanel"
         WWW_DIR="/var/www/html"
@@ -93,7 +107,7 @@ detect_environment() {
     fi
 
     # Termux / ZeroTermux
-    if [ -d "/data/data/com.termux" ] || [ -n "$TERMUX_VERSION" ]; then
+    if [ "$is_termux" -eq 1 ] || [ -d "/data/data/com.termux" ]; then
         ENV_TYPE="termux"
         PANEL_DIR="$HOME/zeropanel"
         WWW_DIR="$HOME/www"

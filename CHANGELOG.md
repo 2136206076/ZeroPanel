@@ -1,5 +1,16 @@
 # ZeroPanel 更新日志
 
+## v2.0.5
+
+### 问题修复
+
+- **安装脚本环境检测**
+  - 修复 Proot 容器内 Ubuntu/Debian 环境被识别为“未知/不支持”的问题
+  - 原逻辑依赖 `/proc/1/cgroup` 中的 `proot` 标记或特定环境变量，多数 proot 容器不具备这些特征
+  - 新逻辑直接依据 `/etc/os-release` 的 `ID` 判断：Debian/Ubuntu 直接视为 Proot
+  - 保留 Termux 检测（`TERMUX_VERSION`、`PREFIX`、`/data/data/com.termux`），避免误识别
+  - 同步更新 Termux 普通版与 Proot 高级版的安装脚本
+
 ## v2.0.4
 
 ### 问题修复
