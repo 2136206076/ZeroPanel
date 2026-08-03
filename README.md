@@ -2,8 +2,10 @@
 
 一款面向 **ZeroTermux / Termux** 和 **Proot (Ubuntu/Debian)** 的轻量级建站面板。
 
-- **Termux 版**：适合 Android 终端环境，轻量、快速。
-- **Proot 高级版**：在 Proot 容器内提供接近宝塔面板体验的完整建站能力，支持多 PHP 版本、伪静态、在线文件编辑、定时任务等。
+- **Termux 轻量版**：专为 Android 终端环境优化，占用小、启动快。
+- **Proot 高级版**：专为 Proot 容器内的 Ubuntu / Debian 量身定做，提供多 PHP 版本、伪静态、在线文件编辑、定时任务等接近宝塔面板的体验。
+
+两个版本代码独立、安装脚本独立、互不影响。
 
 ---
 
@@ -14,25 +16,26 @@
 3. [安装教程](#安装教程)
 4. [快速上手](#快速上手)
 5. [常用命令](#常用命令)
-6. [常见问题](#常见问题)
-7. [技术架构](#技术架构)
-8. [API 概览](#api-概览)
-9. [项目结构](#项目结构)
-10. [安全考虑](#安全考虑)
-11. [开发指南](#开发指南)
-12. [许可证](#许可证)
+6. [云更新说明](#云更新说明)
+7. [常见问题](#常见问题)
+8. [技术架构](#技术架构)
+9. [API 概览](#api-概览)
+10. [项目结构](#项目结构)
+11. [安全考虑](#安全考虑)
+12. [开发指南](#开发指南)
+13. [许可证](#许可证)
 
 ---
 
 ## 功能特性
 
-| 功能 | Termux 版 | Proot 高级版 |
+| 功能 | Termux 轻量版 | Proot 高级版 |
 |---|---|---|
 | 网站管理 | 支持 | 支持 |
 | 数据库管理 | 支持 | 支持 |
 | 文件管理 | 支持 | 支持 |
 | 在线文件编辑 | - | 支持 |
-| 文件在线解压/压缩 | - | 支持 |
+| 文件在线解压 / 压缩 | - | 支持 |
 | 多 PHP 版本管理 | - | 支持 |
 | PHP 扩展在线安装 | - | 支持 |
 | 网站伪静态规则 | - | 支持 |
@@ -53,10 +56,12 @@
 
 ### Proot 高级版
 
-- Android 设备，通过 ZeroTermux/Termux 进入 Proot 容器
+- Android 设备，通过 ZeroTermux / Termux 进入 Proot 容器
 - Proot 内运行 **Ubuntu** 或 **Debian**
-- 至少 1GB 可用存储空间（包含 PHP/MySQL/Nginx）
+- 至少 1GB 可用存储空间（包含 Nginx、MariaDB、PHP）
 - 建议 Android 8.0 及以上版本
+
+> Proot 高级版已针对无 systemd 的容器环境优化，直接使用 `nginx`、`mysqld_safe`、`php{ver}-fpm` 等原生守护进程启动服务，不再依赖 `service` / `systemctl`。
 
 ---
 
@@ -64,27 +69,35 @@
 
 ### 方式一：一键在线安装（推荐）
 
-同一个安装脚本会自动识别当前环境：
+#### Termux / ZeroTermux
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/2136206076/ZeroPanel/main/zeropanel/install.sh)
 ```
 
-脚本会检测：
+#### Proot Ubuntu / Debian
 
-1. **Proot + Ubuntu/Debian** → 安装 `zeropanel-proot_v2.zip` 高级版
-2. **Termux / ZeroTermux** → 安装 `zeropanel_v2.zip` 轻量版
-3. **其他环境** → 提示并退出
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/2136206076/ZeroPanel/main/zeropanel-proot/install.sh)
+```
+
+> 两个版本的安装脚本完全独立，请根据当前环境选择对应命令。
+
+#### 通用入口（自动识别环境）
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/2136206076/ZeroPanel/main/install.sh)
+```
 
 安装过程会自动完成：
 
-- 更新系统软件源
-- 安装 Python 3、Nginx、MariaDB、PHP-FPM
-- 安装 Python 依赖（Flask、Flask-CORS、Werkzeug）
-- 创建 `zeropanel` 快捷命令
-- 启动面板服务
+1. 更新系统软件源
+2. 安装 Python 3、Nginx、MariaDB、PHP-FPM 等依赖
+3. 安装 Python 依赖（Flask、Flask-CORS、Werkzeug）
+4. 创建 `zeropanel` 快捷命令
+5. 启动面板服务
 
-安装完成后，访问：
+安装完成后访问：
 
 ```text
 http://localhost:5000
@@ -99,15 +112,13 @@ http://localhost:5000
 
 > 登录后请立即进入「账号设置」修改默认密码。
 
----
-
 ### 方式二：手动安装
 
 #### Termux / ZeroTermux 手动安装
 
 ```bash
 pkg update -y
-pkg install -y python nginx mariadb php-fpm curl unzip
+pkg install -y python nginx mariadb php-fpm curl unzip zip
 pip3 install flask flask-cors werkzeug
 cd ~
 curl -fsSL -O https://raw.githubusercontent.com/2136206076/ZeroPanel/main/zeropanel_v2.zip
@@ -115,12 +126,12 @@ unzip zeropanel_v2.zip -d ~
 zeropanel start
 ```
 
-#### Proot Ubuntu/Debian 手动安装
+#### Proot Ubuntu / Debian 手动安装
 
 ```bash
 apt-get update -y
 apt-get install -y python3 python3-pip nginx mariadb-server php-fpm php-mysql curl unzip cron
-pip3 install flask flask-cors werkzeug
+pip3 install --break-system-packages flask flask-cors werkzeug || pip3 install flask flask-cors werkzeug
 cd /var/www
 curl -fsSL -O https://raw.githubusercontent.com/2136206076/ZeroPanel/main/zeropanel-proot_v2.zip
 unzip zeropanel-proot_v2.zip -d /var/www
@@ -160,10 +171,33 @@ zeropanel start
 zeropanel start      # 启动面板及相关服务
 zeropanel stop       # 停止面板及相关服务
 zeropanel restart    # 重启面板
-zeropanel status     # 查看面板及 Nginx/MariaDB/PHP-FPM 状态
+zeropanel status     # 查看面板及 Nginx / MariaDB / PHP-FPM 状态
 zeropanel log        # 查看面板运行日志
 zeropanel help       # 显示帮助
 ```
+
+---
+
+## 云更新说明
+
+面板内置云更新功能，可在「系统设置」→「检查更新」中使用。
+
+### 更新流程
+
+1. 点击「检查更新」，面板会从 GitHub 获取最新版本号
+2. 如果有新版本，点击「立即更新」
+3. 面板会自动备份当前文件到 `data/update_backup/`
+4. 下载新版 ZIP 包并解压覆盖
+5. 更新完成后需要点击「重启面板」使更新生效
+
+### 版本对应关系
+
+| 版本文件 | 对应面板 | 下载包 |
+|---|---|---|
+| Termux 轻量版 | `zeropanel/` | `zeropanel_v2.zip` |
+| Proot 高级版 | `zeropanel-proot/` | `zeropanel-proot_v2.zip` |
+
+> 注意：云更新时请勿中断网络，更新失败可通过备份 ZIP 手动恢复。
 
 ---
 
@@ -218,7 +252,7 @@ zeropanel log
 
 ### 5. 如何卸载 ZeroPanel
 
-**Termux 版：**
+**Termux 轻量版：**
 
 ```bash
 zeropanel stop
@@ -392,9 +426,10 @@ ZeroPanel/
 ├── CHANGELOG.md           # 更新日志
 ├── VERSION                # 版本号
 ├── .gitignore             # Git 忽略规则
+├── install.sh             # 通用安装入口（自动识别环境）
 ├── zeropanel/             # Termux 轻量版面板
 │   ├── app.py             # Flask 主应用
-│   ├── install.sh         # 一键安装脚本
+│   ├── install.sh         # Termux 专用安装脚本
 │   ├── requirements.txt   # Python 依赖
 │   ├── test_verify.py     # 功能验证测试脚本
 │   ├── data/              # 运行时数据（自动生成，不入库）
@@ -428,7 +463,7 @@ ZeroPanel/
 
 ### 本地运行测试
 
-**Termux 版：**
+**Termux 轻量版：**
 
 ```bash
 cd zeropanel

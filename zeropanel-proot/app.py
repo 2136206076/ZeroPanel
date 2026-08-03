@@ -2482,11 +2482,14 @@ def _backup_current_version(backup_file):
 
 
 def _safe_extract_update(zip_path, target_dir):
-    """安全解压更新包，支持根目录布局或 zeropanel/ 子目录布局"""
+    """安全解压更新包，支持 zeropanel-proot/、zeropanel/ 根目录布局或扁平布局"""
     with zipfile.ZipFile(zip_path, 'r') as zf:
         members = zf.namelist()
-        has_root_prefix = any(m.startswith('zeropanel/') for m in members)
-        prefix = 'zeropanel/' if has_root_prefix else ''
+        prefix = ''
+        for candidate in ['zeropanel-proot/', 'zeropanel/']:
+            if any(m.startswith(candidate) for m in members):
+                prefix = candidate
+                break
         prefix_len = len(prefix)
 
         for member in members:
