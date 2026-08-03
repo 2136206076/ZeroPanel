@@ -140,6 +140,83 @@ show_environment_info() {
     echo ""
 }
 
+# ==================== 卸载流程 ====================
+uninstall_proot() {
+    print_title
+    echo ""
+    echo -e "  ${YELLOW}卸载 ZeroPanel (Proot 高级版)${NC}"
+    echo ""
+    read -p "确定要卸载吗？数据将备份到 /var/www/zeropanel_data_backup_*. [y/N]: " confirm
+    if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
+        echo -e "  ${CYAN}停止相关服务...${NC}"
+        service nginx stop 2>/dev/null || true
+        service mysql stop 2>/dev/null || true
+        service mariadb stop 2>/dev/null || true
+        service php*-fpm stop 2>/dev/null || true
+        pkill -f "python3 app.py" 2>/dev/null || true
+        pkill -f "python app.py" 2>/dev/null || true
+
+        if [ -d "/var/www/zeropanel/data" ]; then
+            local backup_dir="/var/www/zeropanel_data_backup_$(date +%Y%m%d%H%M%S)"
+            echo -e "  ${YELLOW}备份数据到 $backup_dir${NC}"
+            cp -r "/var/www/zeropanel/data" "$backup_dir"
+        fi
+
+        echo -e "  ${CYAN}删除面板文件...${NC}"
+        rm -rf "/var/www/zeropanel"
+        rm -rf "/var/www/html"
+        rm -f /etc/nginx/conf.d/zeropanel*.conf
+        rm -f /usr/local/bin/zeropanel
+
+        echo ""
+        print_separator
+        echo -e "              ${GREEN}ZeroPanel 已卸载${NC}"
+        print_separator
+        echo ""
+        [ -n "${backup_dir:-}" ] && echo -e "  ${YELLOW}数据备份: $backup_dir${NC}"
+    else
+        echo -e "  ${YELLOW}已取消卸载${NC}"
+    fi
+}
+
+uninstall_termux() {
+    print_title
+    echo ""
+    echo -e "  ${YELLOW}卸载 ZeroPanel (Termux 轻量版)${NC}"
+    echo ""
+    read -p "确定要卸载吗？数据将备份到 ~/zeropanel_data_backup_*. [y/N]: " confirm
+    if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
+        echo -e "  ${CYAN}停止相关服务...${NC}"
+        pkill -f "python3 app.py" 2>/dev/null || true
+        pkill -f "python app.py" 2>/dev/null || true
+        nginx -s stop 2>/dev/null || true
+        pkill -x mysqld 2>/dev/null || true
+        pkill -x mariadbd 2>/dev/null || true
+        pkill -f php-fpm 2>/dev/null || true
+
+        if [ -d "$HOME/zeropanel/data" ]; then
+            local backup_dir="$HOME/zeropanel_data_backup_$(date +%Y%m%d%H%M%S)"
+            echo -e "  ${YELLOW}备份数据到 $backup_dir${NC}"
+            cp -r "$HOME/zeropanel/data" "$backup_dir"
+        fi
+
+        echo -e "  ${CYAN}删除面板文件...${NC}"
+        rm -rf "$HOME/zeropanel"
+        rm -rf "$HOME/www"
+        rm -f "$PREFIX/etc/nginx/conf.d/zeropanel*.conf"
+        rm -f "$HOME/bin/zeropanel"
+
+        echo ""
+        print_separator
+        echo -e "              ${GREEN}ZeroPanel 已卸载${NC}"
+        print_separator
+        echo ""
+        [ -n "${backup_dir:-}" ] && echo -e "  ${YELLOW}数据备份: $backup_dir${NC}"
+    else
+        echo -e "  ${YELLOW}已取消卸载${NC}"
+    fi
+}
+
 # ==================== Proot 安装流程 ====================
 install_proot() {
     local total_steps=9
@@ -336,8 +413,27 @@ case "\$1" in
     log)
         [ -f "\$LOG_FILE" ] && tail -n 50 "\$LOG_FILE" || echo "日志不存在"
         ;;
+    uninstall)
+        echo -e "\033[1;37m卸载 ZeroPanel...\033[0m"
+        read -p "确定要卸载吗？数据将备份到 /var/www/zeropanel_data_backup_*. [y/N]: " confirm
+        if [ "\$confirm" = "y" ] || [ "\$confirm" = "Y" ]; then
+            "\$0" stop
+            if [ -d "$PANEL_DIR/data" ]; then
+                backup_dir="/var/www/zeropanel_data_backup_\$(date +%Y%m%d%H%M%S)"
+                echo "  备份数据到 \$backup_dir"
+                cp -r "$PANEL_DIR/data" "\$backup_dir"
+            fi
+            rm -rf "$PANEL_DIR"
+            rm -rf "/var/www/html"
+            rm -f /etc/nginx/conf.d/zeropanel*.conf
+            rm -f /usr/local/bin/zeropanel
+            echo -e "\033[0;32mZeroPanel 已卸载\033[0m"
+        else
+            echo "已取消"
+        fi
+        ;;
     help|*)
-        echo "用法: zeropanel {start|stop|restart|status|log|help}"
+        echo "用法: zeropanel {start|stop|restart|status|log|uninstall|help}"
         ;;
 esac
 SCRIPT
@@ -608,8 +704,27 @@ case "$1" in
     log)
         [ -f "$LOG_FILE" ] && tail -n 50 "$LOG_FILE" || echo "日志不存在"
         ;;
+    uninstall)
+        echo -e "\033[1;37m卸载 ZeroPanel...\033[0m"
+        read -p "确定要卸载吗？数据将备份到 ~/zeropanel_data_backup_*. [y/N]: " confirm
+        if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
+            "$0" stop
+            if [ -d "$PANEL_DIR/data" ]; then
+                backup_dir="$HOME/zeropanel_data_backup_$(date +%Y%m%d%H%M%S)"
+                echo "  备份数据到 $backup_dir"
+                cp -r "$PANEL_DIR/data" "$backup_dir"
+            fi
+            rm -rf "$PANEL_DIR"
+            rm -rf "$HOME/www"
+            rm -f "$PREFIX/etc/nginx/conf.d/zeropanel*.conf"
+            rm -f "$HOME/bin/zeropanel"
+            echo -e "\033[0;32mZeroPanel 已卸载\033[0m"
+        else
+            echo "已取消"
+        fi
+        ;;
     help|*)
-        echo "用法: zeropanel {start|stop|restart|status|log|help}"
+        echo "用法: zeropanel {start|stop|restart|status|log|uninstall|help}"
         ;;
 esac
 SCRIPT
@@ -660,6 +775,29 @@ main() {
     clear
     print_title
     echo ""
+
+    # 卸载模式
+    case "$1" in
+        --uninstall|uninstall|-u)
+            detect_environment
+            show_environment_info
+            case "$ENV_TYPE" in
+                proot)
+                    uninstall_proot
+                    ;;
+                termux)
+                    uninstall_termux
+                    ;;
+                *)
+                    echo -e "  ${RED}错误：无法识别当前环境，无法自动卸载${NC}"
+                    echo -e "  ${WHITE}请手动删除面板目录和快捷命令${NC}"
+                    exit 1
+                    ;;
+            esac
+            return
+            ;;
+    esac
+
     echo -e "  ${WHITE}欢迎使用 ZeroPanel 智能安装程序！${NC}"
     echo -e "  自动识别 Termux / Proot 环境并安装对应版本"
     echo ""
@@ -707,12 +845,13 @@ main() {
     echo -e "  ${WHITE}默认密码:${NC} ${CYAN}admin123${NC}"
     echo ""
     echo -e "  ${WHITE}快捷命令:${NC}"
-    echo -e "    ${BLUE}zeropanel start${NC}    - 启动面板"
-    echo -e "    ${BLUE}zeropanel stop${NC}     - 停止面板"
-    echo -e "    ${BLUE}zeropanel restart${NC}  - 重启面板"
-    echo -e "    ${BLUE}zeropanel status${NC}   - 查看状态"
-    echo -e "    ${BLUE}zeropanel log${NC}      - 查看日志"
-    echo -e "    ${BLUE}zeropanel help${NC}     - 显示帮助"
+    echo -e "    ${BLUE}zeropanel start${NC}      - 启动面板"
+    echo -e "    ${BLUE}zeropanel stop${NC}       - 停止面板"
+    echo -e "    ${BLUE}zeropanel restart${NC}    - 重启面板"
+    echo -e "    ${BLUE}zeropanel status${NC}     - 查看状态"
+    echo -e "    ${BLUE}zeropanel log${NC}        - 查看日志"
+    echo -e "    ${BLUE}zeropanel uninstall${NC}  - 卸载面板"
+    echo -e "    ${BLUE}zeropanel help${NC}       - 显示帮助"
     echo ""
     print_separator
     echo -e "              ${CYAN}感谢使用 ZeroPanel！${NC}"
@@ -723,4 +862,4 @@ main() {
     zeropanel status
 }
 
-main
+main "$@"

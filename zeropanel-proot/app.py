@@ -29,7 +29,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 
 # 面板版本信息
-PANEL_VERSION = '2.0.6'
+PANEL_VERSION = '2.0.7'
 
 # 云更新配置
 UPDATE_CONFIG = {
