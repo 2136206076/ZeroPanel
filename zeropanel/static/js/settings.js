@@ -273,8 +273,74 @@ async function restartPanel() {
     }
 }
 
-// 页面加载完成后自动检查更新
+// 加载备份列表
+async function loadBackups() {
+    try {
+        const response = await fetch('/api/system/backups');
+        const data = await response.json();
+        const container = document.getElementById('backup-list');
+
+        if (!data.success) {
+            container.innerHTML = `<p class="text-secondary" style="font-size: 13px;">获取备份列表失败: ${data.message || '未知错误'}</p>`;
+            return;
+        }
+
+        const backups = data.backups || [];
+        if (backups.length === 0) {
+            container.innerHTML = '<p class="text-secondary" style="font-size: 13px;">暂无备份文件</p>';
+            return;
+        }
+
+        let html = '<div style="max-height: 200px; overflow-y: auto; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 8px;">';
+        backups.forEach(backup => {
+            const size = backup.size < 1024 ? backup.size + ' B' :
+                backup.size < 1024 * 1024 ? (backup.size / 1024).toFixed(1) + ' KB' :
+                (backup.size / (1024 * 1024)).toFixed(1) + ' MB';
+            html += `
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                    <div style="font-size: 13px;">
+                        <div style="color: #e2e8f0;">${backup.filename}</div>
+                        <div style="color: #94a3b8; font-size: 11px;">${backup.created} · ${size}</div>
+                    </div>
+                    <button class="btn btn-small btn-danger" onclick="rollback('${backup.path}')">回滚</button>
+                </div>
+            `;
+        });
+        html += '</div>';
+        container.innerHTML = html;
+    } catch (error) {
+        document.getElementById('backup-list').innerHTML = `<p class="text-secondary" style="font-size: 13px;">获取备份列表失败: ${error.message}</p>`;
+    }
+}
+
+// 回滚到指定备份
+async function rollback(backupPath) {
+    if (!confirm('确定要回滚到该备份版本吗？\n回滚后会覆盖当前面板程序文件，请谨慎操作。')) {
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/system/rollback', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ backup_file: backupPath })
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            showToast('回滚成功，请重启面板使恢复生效', 'success');
+            document.getElementById('restart-btn').style.display = 'inline-flex';
+        } else {
+            showToast(data.message || '回滚失败', 'error');
+        }
+    } catch (error) {
+        showToast('回滚失败: ' + error.message, 'error');
+    }
+}
+
+// 页面加载完成后自动检查更新并加载备份列表
 document.addEventListener('DOMContentLoaded', () => {
     loadVersion();
     checkUpdate();
+    loadBackups();
 });

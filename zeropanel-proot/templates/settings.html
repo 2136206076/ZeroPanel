@@ -237,6 +237,26 @@
                                 重启面板
                             </button>
                         </div>
+                        <div class="backup-section" id="backup-section" style="margin-top: 20px;">
+                            <div class="settings-header" style="margin-bottom: 12px;">
+                                <svg viewBox="0 0 24 24" width="20" height="20" stroke="#00d4ff" stroke-width="2" fill="none">
+                                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                                </svg>
+                                <h3 style="font-size: 16px; margin: 0;">备份恢复</h3>
+                            </div>
+                            <p class="text-secondary" style="font-size: 13px; margin-bottom: 10px;">云更新前会自动备份当前版本，出现问题时可选择备份回滚。</p>
+                            <div id="backup-list" style="margin-bottom: 12px;">
+                                <p class="text-secondary" style="font-size: 13px;">暂无备份文件</p>
+                            </div>
+                            <button class="btn btn-outline" onclick="loadBackups()">
+                                <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none">
+                                    <polyline points="23 4 23 10 17 10"/>
+                                    <polyline points="1 20 1 14 7 14"/>
+                                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                                </svg>
+                                刷新备份列表
+                            </button>
+                        </div>
                     </div>
                 </section>
 

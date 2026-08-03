@@ -2453,9 +2453,27 @@ def api_check_update():
 def _backup_current_version(backup_file):
     """备份当前面板代码文件到 ZIP"""
     exclude_names = {'data', '__pycache__', '.git', '.venv', 'venv', 'update_backup', 'update_temp'}
-    base_resolved = BASE_DIR.resolve()
+
+    # 面板主目录候选列表，支持迁移期兼容旧路径
+    base_candidates = [BASE_DIR]
+    if str(BASE_DIR) == '/var/lib/zeropanel':
+        base_candidates.append(Path('/var/www/zeropanel'))
+    if str(BASE_DIR) == str(Path.home() / '.zeropanel'):
+        base_candidates.append(Path.home() / 'zeropanel')
+
+    base_resolved = None
+    for candidate in base_candidates:
+        resolved = candidate.resolve()
+        if resolved.exists() and any(resolved.iterdir()):
+            base_resolved = resolved
+            break
+
+    if base_resolved is None:
+        raise RuntimeError(f'面板目录不存在或为空: {BASE_DIR}')
+
     backed_count = 0
     errors = []
+    base_str = str(base_resolved) + os.sep
 
     with zipfile.ZipFile(backup_file, 'w', zipfile.ZIP_DEFLATED) as zf:
         for root, dirs, files in os.walk(base_resolved, followlinks=False):
@@ -2464,14 +2482,12 @@ def _backup_current_version(backup_file):
 
             for filename in files:
                 file_path = Path(root) / filename
-                # 跳过隐藏文件、备份文件和符号链接
+                # 跳过隐藏文件和符号链接
                 if filename.startswith('.') or file_path.is_symlink():
                     continue
 
                 # 安全校验：确保文件在 BASE_DIR 内
-                try:
-                    file_path.resolve().relative_to(base_resolved)
-                except ValueError:
+                if not str(file_path).startswith(base_str):
                     continue
 
                 arcname = file_path.relative_to(base_resolved)
@@ -2482,7 +2498,7 @@ def _backup_current_version(backup_file):
                     errors.append(f'{arcname}: {e}')
 
     if backed_count == 0:
-        raise RuntimeError('备份文件为空，可能面板目录没有可读文件' + ('; ' + '; '.join(errors[:3]) if errors else ''))
+        raise RuntimeError(f'备份文件为空，面板目录: {base_resolved}，可能没有可读文件' + ('; ' + '; '.join(errors[:3]) if errors else ''))
 
     return backed_count
 
@@ -2588,6 +2604,29 @@ def api_do_update():
         return jsonify({'success': False, 'message': '下载的文件不是有效的 ZIP 压缩包'})
     except Exception as e:
         return jsonify({'success': False, 'message': '更新失败: ' + str(e)})
+
+
+@app.route('/api/system/backups')
+@login_required
+def api_list_backups():
+    """列出可用的更新备份文件"""
+    try:
+        backup_dir = DATA_DIR / 'update_backup'
+        if not backup_dir.exists():
+            return jsonify({'success': True, 'backups': []})
+
+        backups = []
+        for f in sorted(backup_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+            if f.is_file() and f.suffix == '.zip' and f.name.startswith('backup_'):
+                backups.append({
+                    'filename': f.name,
+                    'path': str(f),
+                    'size': f.stat().st_size,
+                    'created': datetime.fromtimestamp(f.stat().st_mtime).strftime('%Y-%m-%d %H:%M:%S')
+                })
+        return jsonify({'success': True, 'backups': backups})
+    except Exception as e:
+        return jsonify({'success': False, 'message': '获取备份列表失败: ' + str(e)})
 
 
 @app.route('/api/system/rollback', methods=['POST'])
