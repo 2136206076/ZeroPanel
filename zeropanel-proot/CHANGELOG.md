@@ -1,5 +1,15 @@
 # ZeroPanel Proot 高级版更新日志
 
+## v2.0.12
+
+### 问题修复
+
+- **修复 PHP 扩展管理页面扩展名全部显示 undefined 的问题**
+  - 后端 `/api/php/extensions` 接口返回的扩展对象新增 `name` 字段
+  - 前端 `renderExtensions` 使用 `ext.name` 显示扩展名，现在能正确显示
+
+---
+
 ## v2.0.11
 
 ### 问题修复

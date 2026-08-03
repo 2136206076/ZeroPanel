@@ -1739,6 +1739,7 @@ def api_php_extensions():
     for ext in COMMON_PHP_EXTENSIONS:
         installed = ext.lower() in installed_modules
         extensions.append({
+            'name': ext,
             'extension': ext,
             'installed': installed,
             'package': f'php{version}-{ext}'
