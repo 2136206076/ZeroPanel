@@ -3,6 +3,7 @@
 # 支持 ZeroTermux / Termux 和 Proot (Ubuntu/Debian) 环境
 
 set -e
+set -o pipefail
 
 # 颜色定义
 RED='\033[0;31m'
@@ -286,10 +287,14 @@ install_proot() {
     # 步骤 5: 安装 Python 依赖
     print_step 5 $total_steps "安装 Python 依赖"
     echo -e "  ${CYAN}正在安装 Flask 及相关库...${NC}"
-    if pip3 install flask flask-cors werkzeug 2>&1 | tail -n 2; then
+    local pip_output
+    if pip_output=$(pip3 install --break-system-packages flask flask-cors werkzeug 2>&1); then
+        print_success "Python 依赖安装完成"
+    elif pip_output=$(pip3 install flask flask-cors werkzeug 2>&1); then
         print_success "Python 依赖安装完成"
     else
         print_error "Python 依赖安装失败"
+        echo "$pip_output" | tail -n 10
         exit 1
     fi
 
