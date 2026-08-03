@@ -38,3 +38,6 @@ Thumbs.db
 # 临时文件
 *.tmp
 *.bak
+
+# 本地推广教程（仅本地查看，不推送到 GitHub）
+PROMOTION.md
