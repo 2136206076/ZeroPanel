@@ -374,7 +374,17 @@ case "$1" in
         fi
         ;;
     help|*)
-        echo "用法: zeropanel {start|stop|restart|status|log|uninstall|help}"
+        echo ""
+        echo -e "\033[1;37mZeroPanel 快捷命令帮助\033[0m"
+        echo ""
+        echo -e "  \033[0;36mzeropanel start\033[0m      启动面板及相关服务（Nginx / MariaDB / PHP-FPM）"
+        echo -e "  \033[0;36mzeropanel stop\033[0m       停止面板及相关服务"
+        echo -e "  \033[0;36mzeropanel restart\033[0m    重启面板"
+        echo -e "  \033[0;36mzeropanel status\033[0m     查看面板及服务运行状态"
+        echo -e "  \033[0;36mzeropanel log\033[0m        查看面板运行日志（最后 50 行）"
+        echo -e "  \033[0;36mzeropanel uninstall\033[0m  卸载面板（卸载前会自动备份 data 目录）"
+        echo -e "  \033[0;36mzeropanel help\033[0m       显示本帮助信息"
+        echo ""
         ;;
 esac
 SCRIPT
