@@ -28,16 +28,6 @@ from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 
-# 面板版本信息
-PANEL_VERSION = '2.0.7'
-
-# 云更新配置
-UPDATE_CONFIG = {
-    'version_url': 'https://raw.githubusercontent.com/2136206076/ZeroPanel/main/VERSION',
-    'download_url': 'https://raw.githubusercontent.com/2136206076/ZeroPanel/main/zeropanel-proot_v2.zip',
-    'release_notes_url': 'https://raw.githubusercontent.com/2136206076/ZeroPanel/main/CHANGELOG.md'
-}
-
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB
 CORS(app)
@@ -49,6 +39,19 @@ DB_PATH = DATA_DIR / 'panel.db'
 BACKUP_DIR = DATA_DIR / 'backups'
 UPLOAD_DIR = DATA_DIR / 'uploads'
 WWW_DIR = Path('/var/www/html')
+
+# 面板版本信息：从本地 VERSION 文件读取
+try:
+    PANEL_VERSION = (BASE_DIR / 'VERSION').read_text(encoding='utf-8').strip()
+except Exception:
+    PANEL_VERSION = '2.0.8'
+
+# 云更新配置：读取 Proot 高级版独立的版本号和更新说明
+UPDATE_CONFIG = {
+    'version_url': 'https://raw.githubusercontent.com/2136206076/ZeroPanel/main/zeropanel-proot/VERSION',
+    'download_url': 'https://raw.githubusercontent.com/2136206076/ZeroPanel/main/zeropanel-proot_v2.zip',
+    'release_notes_url': 'https://raw.githubusercontent.com/2136206076/ZeroPanel/main/zeropanel-proot/CHANGELOG.md'
+}
 
 NGINX_CONF_DIR = Path('/etc/nginx/conf.d')
 PHP_FPM_DIR = Path('/etc/php')
