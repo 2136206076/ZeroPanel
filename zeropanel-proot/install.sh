@@ -225,15 +225,15 @@ install_proot() {
     print_success "目录创建完成"
 
     echo -e "  ${CYAN}配置 PHP-FPM...${NC}"
-    # 查找可用的 PHP-FPM 版本
+    # 查找可用的 PHP-FPM 版本，每个版本使用独立 socket
     for ver in 8.3 8.2 8.1 8.0 7.4; do
         local pool_conf="/etc/php/${ver}/fpm/pool.d/www.conf"
         if [ -f "$pool_conf" ]; then
             cp "$pool_conf" "$pool_conf.bak"
-            sed -i "s|^listen =.*|listen = /run/php/php-fpm.sock|" "$pool_conf"
+            sed -i "s|^listen =.*|listen = /run/php/php${ver}-fpm.sock|" "$pool_conf"
         fi
     done
-    print_success "PHP-FPM 已配置监听 /run/php/php-fpm.sock"
+    print_success "PHP-FPM 已配置独立 socket"
 
     echo -e "  ${CYAN}配置 Nginx...${NC}"
     if [ -f "/etc/nginx/nginx.conf" ]; then
@@ -290,10 +290,29 @@ case "\$1" in
         echo -e "\033[1;37m启动 ZeroPanel...\033[0m"
         PY_CMD=\$(python_cmd)
         [ -z "\$PY_CMD" ] && { echo "未找到 python3"; exit 1; }
-        service mysql start 2>/dev/null || true
-        service mariadb start 2>/dev/null || true
-        service nginx start 2>/dev/null || nginx 2>/dev/null || true
-        service php*-fpm start 2>/dev/null || service php-fpm start 2>/dev/null || true
+
+        # Proot 无 systemd，直接启动 daemon
+        if ! pgrep -x mysqld >/dev/null && ! pgrep -x mariadbd >/dev/null; then
+            if command -v mysqld_safe >/dev/null 2>&1; then
+                nohup mysqld_safe > /dev/null 2>&1 &
+            elif command -v mysqld >/dev/null 2>&1; then
+                nohup mysqld > /dev/null 2>&1 &
+            fi
+            sleep 2
+        fi
+
+        if ! pgrep -x nginx >/dev/null; then
+            nginx 2>/dev/null || true
+        fi
+
+        for ver in 8.3 8.2 8.1 8.0 7.4; do
+            if command -v "php\${ver//./}-fpm" >/dev/null 2>&1 && ! pgrep -f "php\${ver//./}-fpm" >/dev/null; then
+                "php\${ver//./}-fpm" 2>/dev/null || true
+            elif command -v "php-fpm\$ver" >/dev/null 2>&1 && ! pgrep -f "php-fpm\$ver" >/dev/null; then
+                "php-fpm\$ver" 2>/dev/null || true
+            fi
+        done
+
         cd "\$PANEL_DIR"
         if ! pgrep -f "\$PY_CMD app.py" > /dev/null; then
             nohup \$PY_CMD app.py > "\$LOG_FILE" 2>&1 &
@@ -304,10 +323,10 @@ case "\$1" in
         echo -e "\033[1;37m停止 ZeroPanel...\033[0m"
         PY_CMD=\$(python_cmd)
         [ -n "\$PY_CMD" ] && pkill -f "\$PY_CMD app.py" 2>/dev/null || true
-        service nginx stop 2>/dev/null || nginx -s stop 2>/dev/null || true
-        service mysql stop 2>/dev/null || true
-        service mariadb stop 2>/dev/null || true
-        service php*-fpm stop 2>/dev/null || true
+        nginx -s stop 2>/dev/null || true
+        pkill -x mysqld 2>/dev/null || true
+        pkill -x mariadbd 2>/dev/null || true
+        pkill -f php-fpm 2>/dev/null || true
         ;;
     restart)
         "\$0" stop; sleep 2; "\$0" start
@@ -315,8 +334,9 @@ case "\$1" in
     status)
         echo -e "\033[1;37m服务状态:\033[0m"
         echo "  Panel:   \$(pgrep -f 'python3 app.py' >/dev/null && echo '运行中' || echo '已停止')"
-        echo "  Nginx:   \$(service nginx status 2>/dev/null | grep -q running && echo '运行中' || echo '已停止')"
-        echo "  MariaDB: \$(service mysql status 2>/dev/null | grep -q running && echo '运行中' || echo '已停止')"
+        echo "  Nginx:   \$(pgrep -x nginx >/dev/null && echo '运行中' || echo '已停止')"
+        echo "  MariaDB: \$(pgrep -x mysqld >/dev/null || pgrep -x mariadbd >/dev/null && echo '运行中' || echo '已停止')"
+        echo "  PHP-FPM: \$(pgrep -f php-fpm >/dev/null && echo '运行中' || echo '已停止')"
         ;;
     log)
         [ -f "\$LOG_FILE" ] && tail -n 50 "\$LOG_FILE" || echo "日志不存在"
@@ -351,9 +371,28 @@ SCRIPT
     # 步骤 9: 启动服务
     print_step 9 $total_steps "启动服务"
     echo -e "  ${CYAN}启动相关服务...${NC}"
-    service mysql start 2>/dev/null || service mariadb start 2>/dev/null || true
-    service nginx start 2>/dev/null || nginx 2>/dev/null || true
-    service php*-fpm start 2>/dev/null || service php-fpm start 2>/dev/null || true
+
+    # Proot 无 systemd，直接启动 daemon
+    if ! pgrep -x mysqld >/dev/null && ! pgrep -x mariadbd >/dev/null; then
+        if command -v mysqld_safe >/dev/null 2>&1; then
+            nohup mysqld_safe > /dev/null 2>&1 &
+        elif command -v mysqld >/dev/null 2>&1; then
+            nohup mysqld > /dev/null 2>&1 &
+        fi
+        sleep 2
+    fi
+
+    if ! pgrep -x nginx >/dev/null; then
+        nginx 2>/dev/null || true
+    fi
+
+    for ver in 8.3 8.2 8.1 8.0 7.4; do
+        if command -v "php${ver//./}-fpm" >/dev/null 2>&1 && ! pgrep -f "php${ver//./}-fpm" >/dev/null; then
+            "php${ver//./}-fpm" 2>/dev/null || true
+        elif command -v "php-fpm$ver" >/dev/null 2>&1 && ! pgrep -f "php-fpm$ver" >/dev/null; then
+            "php-fpm$ver" 2>/dev/null || true
+        fi
+    done
 
     PY_CMD=$(detect_python_cmd)
     if [ -n "$PY_CMD" ]; then

@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 ZeroPanel v2.0 - 轻量级建站面板
-专为 ZeroTermux 设计（proot 增强版）
+专为 Proot 容器内 Ubuntu/Debian 环境定制
 """
 
 import os
@@ -34,7 +34,7 @@ PANEL_VERSION = '2.0.7'
 # 云更新配置
 UPDATE_CONFIG = {
     'version_url': 'https://raw.githubusercontent.com/2136206076/ZeroPanel/main/VERSION',
-    'download_url': 'https://raw.githubusercontent.com/2136206076/ZeroPanel/main/zeropanel_v2.zip',
+    'download_url': 'https://raw.githubusercontent.com/2136206076/ZeroPanel/main/zeropanel-proot_v2.zip',
     'release_notes_url': 'https://raw.githubusercontent.com/2136206076/ZeroPanel/main/CHANGELOG.md'
 }
 
@@ -42,68 +42,24 @@ app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB
 CORS(app)
 
-# 配置
-BASE_DIR = Path(__file__).parent.resolve()
+# 配置（固定为 Proot Ubuntu/Debian 路径）
+BASE_DIR = Path('/var/www/zeropanel')
 DATA_DIR = BASE_DIR / 'data'
 DB_PATH = DATA_DIR / 'panel.db'
 BACKUP_DIR = DATA_DIR / 'backups'
 UPLOAD_DIR = DATA_DIR / 'uploads'
-WWW_DIR = Path.home() / 'www'
+WWW_DIR = Path('/var/www/html')
 
-# ==================== 环境检测与路径适配 ====================
-
-def _detect_proot():
-    """检测是否在 proot 容器中运行"""
-    try:
-        cgroup_file = Path('/proc/1/cgroup')
-        if cgroup_file.exists():
-            cgroup = cgroup_file.read_text().lower()
-            if any(k in cgroup for k in ('lxc', 'docker', 'containerd', 'proot', 'buildd')):
-                return True
-    except Exception:
-        pass
-    if os.environ.get('PROOT_DISTRO'):
-        return True
-    if os.environ.get('container', '').lower() in ('1', 'true', 'yes'):
-        return True
-    return False
-
-
-def _detect_debian_ubuntu():
-    """检测系统是否为 Ubuntu/Debian"""
-    try:
-        os_release = Path('/etc/os-release')
-        if os_release.exists():
-            content = os_release.read_text().lower()
-            return 'debian' in content or 'ubuntu' in content
-    except Exception:
-        pass
-    return False
-
-
-IS_PROOT = _detect_proot()
-IS_DEBIAN_UBUNTU = _detect_debian_ubuntu()
-
-if IS_PROOT and IS_DEBIAN_UBUNTU:
-    NGINX_CONF_DIR = Path('/etc/nginx/conf.d')
-    PHP_FPM_DIR = Path('/etc/php')
-    WEB_ROOT_BASE = Path('/var/www')
-    # Proot 高级版使用自己的分发包
-    UPDATE_CONFIG['download_url'] = 'https://raw.githubusercontent.com/2136206076/ZeroPanel/main/zeropanel-proot_v2.zip'
-else:
-    # Termux 环境：保持原路径
-    TERMUX_PREFIX = Path(os.environ.get('PREFIX', '/data/data/com.termux/files/usr'))
-    NGINX_CONF_DIR = TERMUX_PREFIX / 'etc' / 'nginx' / 'conf.d'
-    PHP_FPM_DIR = TERMUX_PREFIX / 'etc' / 'php'
-    WEB_ROOT_BASE = WWW_DIR
+NGINX_CONF_DIR = Path('/etc/nginx/conf.d')
+PHP_FPM_DIR = Path('/etc/php')
+WEB_ROOT_BASE = Path('/var/www')
+NGINX_LOG_DIR = Path('/var/log/nginx')
 
 # 允许的文件扩展名
 ALLOWED_EXTENSIONS = {'txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'zip', 'tar', 'gz', 'sql', 'php', 'html', 'css', 'js', 'json', 'xml', 'md'}
 
 # 允许文件操作的根目录
-ALLOWED_ROOTS = [WWW_DIR, DATA_DIR]
-if IS_PROOT and IS_DEBIAN_UBUNTU:
-    ALLOWED_ROOTS.append(WEB_ROOT_BASE)
+ALLOWED_ROOTS = [Path('/var/www'), Path('/var/www/zeropanel/data')]
 
 # 常用 PHP 扩展列表
 COMMON_PHP_EXTENSIONS = [
@@ -266,17 +222,13 @@ def run_command(cmd, shell=False, timeout=30):
 
 
 def _php_fpm_socket(php_version='8.0'):
-    """根据环境返回 PHP-FPM socket 路径"""
-    if IS_PROOT and IS_DEBIAN_UBUNTU:
-        return f'/run/php/php{php_version}-fpm.sock'
-    return f'/data/data/com.termux/files/usr/var/run/php{php_version}-fpm.sock'
+    """返回 PHP-FPM socket 路径"""
+    return f'/run/php/php{php_version}-fpm.sock'
 
 
 def _nginx_log_dir():
     """返回 Nginx 日志目录"""
-    if IS_PROOT and IS_DEBIAN_UBUNTU:
-        return Path('/var/log/nginx')
-    return Path('/data/data/com.termux/files/usr/var/log/nginx')
+    return Path('/var/log/nginx')
 
 
 def _php_fpm_service_name(php_version='8.0'):
@@ -287,13 +239,11 @@ def _php_fpm_service_name(php_version='8.0'):
 
 def _is_package_installed(package):
     """检查 Debian/Ubuntu 软件包是否已安装"""
-    if not (IS_PROOT and IS_DEBIAN_UBUNTU):
-        return False
     success, _, _ = run_command(['dpkg', '-l', package])
     if not success:
         # dpkg -l 对未安装包返回非零，再用 dpkg-query 确认
-        success, _, _ = run_command(['dpkg-query', '-W', '-f=${Status}', package])
-        if success and 'install ok installed' in _:
+        success, stdout, _ = run_command(['dpkg-query', '-W', '-f=${Status}', package])
+        if success and 'install ok installed' in stdout:
             return True
         return False
     return True
@@ -309,6 +259,18 @@ def _is_php_fpm_running(php_version='8.0'):
     return success
 
 
+def _detect_installed_php_versions():
+    """通过 /etc/php/{ver}/fpm 目录检测已安装的 PHP 版本"""
+    installed = []
+    if not PHP_FPM_DIR.exists():
+        return installed
+    for ver in SUPPORTED_PHP_VERSIONS:
+        fpm_dir = PHP_FPM_DIR / ver / 'fpm'
+        if fpm_dir.exists() and fpm_dir.is_dir():
+            installed.append(ver)
+    return installed
+
+
 def _random_password(length=16):
     """生成随机密码"""
     alphabet = string.ascii_letters + string.digits
@@ -319,7 +281,7 @@ def get_system_info():
     """获取系统信息"""
     info = {
         'hostname': 'localhost',
-        'os': 'Android/Termux',
+        'os': 'Linux (proot)',
         'kernel': 'Linux',
         'uptime': '0',
         'cpu_model': 'Unknown',
@@ -381,17 +343,14 @@ def get_system_info():
                 info['uptime'] = f'{days}天 {hours}小时 {minutes}分钟'
         
         # 识别系统类型
-        if IS_PROOT and IS_DEBIAN_UBUNTU:
-            try:
-                os_release = Path('/etc/os-release').read_text()
-                for line in os_release.splitlines():
-                    if line.startswith('PRETTY_NAME='):
-                        info['os'] = line.split('=', 1)[1].strip('"')
-                        break
-            except Exception:
-                info['os'] = 'Linux (proot)'
-        elif os.environ.get('PREFIX', '').find('termux') != -1:
-            info['os'] = 'Android/Termux'
+        try:
+            os_release = Path('/etc/os-release').read_text()
+            for line in os_release.splitlines():
+                if line.startswith('PRETTY_NAME='):
+                    info['os'] = line.split('=', 1)[1].strip('"')
+                    break
+        except Exception:
+            info['os'] = 'Linux (proot)'
     except Exception:
         pass
     
@@ -412,7 +371,7 @@ def get_system_stats():
     
     try:
         # CPU 使用率：采样两次 /proc/stat，计算间隔内的使用率
-        # 优先读取总 cpu 行，部分 Android 内核只有 cpu0/cpu1... 等单核行，需要累加
+        # 优先读取总 cpu 行，部分内核只有 cpu0/cpu1... 等单核行，需要累加
         def read_cpu_times():
             total = 0
             idle = 0
@@ -897,10 +856,7 @@ def api_create_website():
 
     # 设置默认根目录
     if not root:
-        if IS_PROOT and IS_DEBIAN_UBUNTU:
-            root = str(WEB_ROOT_BASE / safe_domain)
-        else:
-            root = str(WWW_DIR / safe_domain)
+        root = str(WEB_ROOT_BASE / safe_domain)
 
     # 创建网站目录
     root_path = Path(root)
@@ -935,7 +891,7 @@ def api_create_website():
     db_user = ''
     db_password = ''
 
-    if create_database and (IS_PROOT and IS_DEBIAN_UBUNTU):
+    if create_database:
         try:
             db_name, db_user, db_password = _create_website_database(website_id, domain)
         except Exception as e:
@@ -1711,18 +1667,10 @@ def api_import_database():
 @login_required
 def api_php_versions():
     """返回系统已安装和可安装的 PHP 版本列表"""
+    installed_versions = _detect_installed_php_versions()
     versions = []
     for ver in SUPPORTED_PHP_VERSIONS:
-        package = f'php{ver}-fpm'
-        installed = False
-        if IS_PROOT and IS_DEBIAN_UBUNTU:
-            installed = _is_package_installed(package)
-        else:
-            # Termux 下检查 php-fpm 命令是否可用（不区分版本）
-            success, _, _ = run_command(['which', f'php{ver}-fpm'])
-            if not success:
-                success, _, _ = run_command(['which', 'php-fpm'])
-            installed = success
+        installed = ver in installed_versions
         versions.append({
             'version': ver,
             'installed': installed,
@@ -1745,14 +1693,23 @@ def api_manage_php_version():
     if action not in ('install', 'uninstall'):
         return jsonify({'success': False, 'message': '操作类型错误'})
 
-    if not (IS_PROOT and IS_DEBIAN_UBUNTU):
-        return jsonify({'success': False, 'message': '当前环境不支持 apt 管理 PHP 版本'})
+    packages = [
+        f'php{version}-fpm',
+        f'php{version}-mysql',
+        f'php{version}-curl',
+        f'php{version}-gd',
+        f'php{version}-mbstring',
+        f'php{version}-xml',
+        f'php{version}-zip',
+        f'php{version}-bcmath',
+        f'php{version}-opcache',
+        f'php{version}-intl',
+    ]
 
-    package = f'php{version}-fpm'
     if action == 'install':
-        success, stdout, stderr = run_command(['apt-get', 'install', '-y', package], timeout=300)
+        success, stdout, stderr = run_command(['apt-get', 'install', '-y'] + packages, timeout=600)
     else:
-        success, stdout, stderr = run_command(['apt-get', 'remove', '--purge', '-y', package], timeout=300)
+        success, stdout, stderr = run_command(['apt-get', 'remove', '--purge', '-y'] + packages, timeout=600)
 
     if not success:
         return jsonify({'success': False, 'message': f'PHP {version} {action} 失败: {stderr or stdout}'})
@@ -1769,31 +1726,18 @@ def api_php_extensions():
         return jsonify({'success': False, 'message': '不支持的 PHP 版本'})
 
     extensions = []
-    if IS_PROOT and IS_DEBIAN_UBUNTU:
-        success, stdout, _ = run_command([f'php{version}', '-m'])
-        installed_modules = set()
-        if success and stdout:
-            installed_modules = {line.strip().lower() for line in stdout.splitlines() if line.strip()}
+    success, stdout, _ = run_command([f'php{version}', '-m'])
+    installed_modules = set()
+    if success and stdout:
+        installed_modules = {line.strip().lower() for line in stdout.splitlines() if line.strip()}
 
-        for ext in COMMON_PHP_EXTENSIONS:
-            installed = ext.lower() in installed_modules
-            extensions.append({
-                'extension': ext,
-                'installed': installed,
-                'package': f'php{version}-{ext}'
-            })
-    else:
-        # Termux 环境：统一检查 php -m
-        success, stdout, _ = run_command(['php', '-m'])
-        installed_modules = set()
-        if success and stdout:
-            installed_modules = {line.strip().lower() for line in stdout.splitlines() if line.strip()}
-        for ext in COMMON_PHP_EXTENSIONS:
-            extensions.append({
-                'extension': ext,
-                'installed': ext.lower() in installed_modules,
-                'package': ext
-            })
+    for ext in COMMON_PHP_EXTENSIONS:
+        installed = ext.lower() in installed_modules
+        extensions.append({
+            'extension': ext,
+            'installed': installed,
+            'package': f'php{version}-{ext}'
+        })
 
     return jsonify({'success': True, 'extensions': extensions})
 
@@ -1816,9 +1760,6 @@ def api_manage_php_extension():
     if action not in ('install', 'uninstall'):
         return jsonify({'success': False, 'message': '操作类型错误'})
 
-    if not (IS_PROOT and IS_DEBIAN_UBUNTU):
-        return jsonify({'success': False, 'message': '当前环境不支持 apt 管理 PHP 扩展'})
-
     package = f'php{version}-{extension}'
     if action == 'install':
         success, stdout, stderr = run_command(['apt-get', 'install', '-y', package], timeout=300)
@@ -1834,7 +1775,7 @@ def api_manage_php_extension():
 @app.route('/api/php/fpm/restart', methods=['POST'])
 @login_required
 def api_restart_php_fpm():
-    """重启指定 PHP-FPM"""
+    """重启指定 PHP-FPM（Proot 无 systemd，使用 pkill + 手动启动）"""
     data = request.get_json() or {}
     version = data.get('version', '8.0')
 
@@ -1842,30 +1783,22 @@ def api_restart_php_fpm():
         return jsonify({'success': False, 'message': '不支持的 PHP 版本'})
 
     service = _php_fpm_service_name(version)
-
-    # 先尝试 service 命令
-    success, _, stderr = run_command(['service', service, 'restart'], timeout=30)
-    if success:
-        return jsonify({'success': True, 'message': f'PHP {version} FPM 已重启'})
-
-    # 失败则尝试 systemctl
-    success, _, stderr2 = run_command(['systemctl', 'restart', service], timeout=30)
-    if success:
-        return jsonify({'success': True, 'message': f'PHP {version} FPM 已重启'})
-
-    # 最后尝试 kill 后手动启动
+    # 停止该版本 PHP-FPM
     run_command(['pkill', '-f', service])
-    success, _, stderr3 = run_command([f'php-fpm{version}'], timeout=10)
+    run_command(['pkill', '-f', f'php-fpm.*{version}'])
+
+    # 启动该版本 PHP-FPM（后台模式，不添加 -F）
+    success, _, stderr = run_command([service], timeout=10)
     if not success:
-        # 某些系统命令名为 php8.0-fpm
-        success, _, stderr3 = run_command([service], timeout=10)
+        # 部分系统命令名为 php-fpm{version}
+        success, _, stderr = run_command([f'php-fpm{version}'], timeout=10)
 
     if success:
         return jsonify({'success': True, 'message': f'PHP {version} FPM 已重启'})
 
     return jsonify({
         'success': False,
-        'message': f'重启 PHP {version} FPM 失败: {stderr or stderr2 or stderr3}'
+        'message': f'重启 PHP {version} FPM 失败: {stderr}'
     })
 
 
@@ -2384,7 +2317,7 @@ def api_system_services():
 @app.route('/api/system/start-services', methods=['POST'])
 @login_required
 def api_start_services():
-    """启动所有服务"""
+    """启动所有服务（Proot 无 systemd，直接启动二进制）"""
     results = {}
 
     # 检查当前状态
@@ -2400,10 +2333,24 @@ def api_start_services():
     else:
         results['mysql'] = {'success': True, 'message': 'MariaDB 已在运行'}
 
-    # 启动 PHP-FPM
+    # 启动所有已安装的 PHP-FPM 版本
     if not current_status.get('php-fpm', False):
-        success, _, stderr = run_command(['php-fpm'])
-        results['php-fpm'] = {'success': success, 'message': 'PHP-FPM 已启动' if success else stderr}
+        installed_versions = _detect_installed_php_versions()
+        started_any = False
+        last_error = ''
+        for ver in installed_versions:
+            service = _php_fpm_service_name(ver)
+            success, _, stderr = run_command([service], timeout=10)
+            if not success:
+                success, _, stderr = run_command([f'php-fpm{ver}'], timeout=10)
+            if success:
+                started_any = True
+            else:
+                last_error = stderr
+        if started_any:
+            results['php-fpm'] = {'success': True, 'message': 'PHP-FPM 已启动'}
+        else:
+            results['php-fpm'] = {'success': False, 'message': last_error or '未找到可启动的 PHP-FPM'}
     else:
         results['php-fpm'] = {'success': True, 'message': 'PHP-FPM 已在运行'}
 
