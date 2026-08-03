@@ -33,7 +33,8 @@ app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB
 CORS(app)
 
 # 配置（固定为 Proot Ubuntu/Debian 路径）
-BASE_DIR = Path('/var/www/zeropanel')
+# 面板程序目录放在 /var/lib/zeropanel，避免通过文件管理误删
+BASE_DIR = Path('/var/lib/zeropanel')
 DATA_DIR = BASE_DIR / 'data'
 DB_PATH = DATA_DIR / 'panel.db'
 BACKUP_DIR = DATA_DIR / 'backups'
@@ -62,7 +63,7 @@ NGINX_LOG_DIR = Path('/var/log/nginx')
 ALLOWED_EXTENSIONS = {'txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'zip', 'tar', 'gz', 'sql', 'php', 'html', 'css', 'js', 'json', 'xml', 'md'}
 
 # 允许文件操作的根目录
-ALLOWED_ROOTS = [Path('/var/www'), Path('/var/www/zeropanel/data')]
+ALLOWED_ROOTS = [WWW_DIR, DATA_DIR]
 
 # 常用 PHP 扩展列表
 COMMON_PHP_EXTENSIONS = [

@@ -15,7 +15,7 @@ WHITE='\033[1;37m'
 NC='\033[0m'
 
 # 固定路径
-PANEL_DIR="/var/www/zeropanel"
+PANEL_DIR="/var/lib/zeropanel"
 WWW_DIR="/var/www/html"
 DATA_DIR="$PANEL_DIR/data"
 PANEL_DOWNLOAD_URL="https://raw.githubusercontent.com/2136206076/ZeroPanel/main/zeropanel-proot_v2.zip"
@@ -86,7 +86,7 @@ uninstall_proot() {
     echo ""
     echo -e "  ${YELLOW}卸载 ZeroPanel (Proot 高级版)${NC}"
     echo ""
-    read -p "确定要卸载吗？数据将备份到 /var/www/zeropanel_data_backup_*. [y/N]: " confirm
+    read -p "确定要卸载吗？数据将备份到 /var/lib/zeropanel_data_backup_*. [y/N]: " confirm
     if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
         echo -e "  ${CYAN}停止相关服务...${NC}"
         service nginx stop 2>/dev/null || true
@@ -96,14 +96,14 @@ uninstall_proot() {
         pkill -f "python3 app.py" 2>/dev/null || true
         pkill -f "python app.py" 2>/dev/null || true
 
-        if [ -d "/var/www/zeropanel/data" ]; then
-            local backup_dir="/var/www/zeropanel_data_backup_$(date +%Y%m%d%H%M%S)"
+        if [ -d "/var/lib/zeropanel/data" ]; then
+            local backup_dir="/var/lib/zeropanel_data_backup_$(date +%Y%m%d%H%M%S)"
             echo -e "  ${YELLOW}备份数据到 $backup_dir${NC}"
-            cp -r "/var/www/zeropanel/data" "$backup_dir"
+            cp -r "/var/lib/zeropanel/data" "$backup_dir"
         fi
 
         echo -e "  ${CYAN}删除面板文件...${NC}"
-        rm -rf "/var/www/zeropanel"
+        rm -rf "/var/lib/zeropanel"
         rm -rf "/var/www/html"
         rm -f /etc/nginx/conf.d/zeropanel*.conf
         rm -f /usr/local/bin/zeropanel
@@ -165,7 +165,7 @@ install_proot() {
 
     if [ -d "$PANEL_DIR" ]; then
         if [ -d "$PANEL_DIR/data" ]; then
-            local backup_dir="/var/www/zeropanel_data_backup_$(date +%Y%m%d%H%M%S)"
+            local backup_dir="/var/lib/zeropanel_data_backup_$(date +%Y%m%d%H%M%S)"
             echo -e "  ${YELLOW}备份数据到 $backup_dir${NC}"
             cp -r "$PANEL_DIR/data" "$backup_dir"
         fi
@@ -174,7 +174,7 @@ install_proot() {
 
     local extract_tmp=$(mktemp -d)
     if unzip -q "$zip_file" -d "$extract_tmp"; then
-        # zip 顶层目录为 zeropanel-proot，需移动到 /var/www/zeropanel
+        # zip 顶层目录为 zeropanel-proot，需移动到 /var/lib/zeropanel
         rm -rf "$PANEL_DIR"
         mv "$extract_tmp/zeropanel-proot" "$PANEL_DIR"
         print_success "面板部署完成"
@@ -343,11 +343,11 @@ case "\$1" in
         ;;
     uninstall)
         echo -e "\033[1;37m卸载 ZeroPanel...\033[0m"
-        read -p "确定要卸载吗？数据将备份到 /var/www/zeropanel_data_backup_*. [y/N]: " confirm
+        read -p "确定要卸载吗？数据将备份到 /var/lib/zeropanel_data_backup_*. [y/N]: " confirm
         if [ "\$confirm" = "y" ] || [ "\$confirm" = "Y" ]; then
             "\$0" stop
             if [ -d "$PANEL_DIR/data" ]; then
-                backup_dir="/var/www/zeropanel_data_backup_\$(date +%Y%m%d%H%M%S)"
+                backup_dir="/var/lib/zeropanel_data_backup_\$(date +%Y%m%d%H%M%S)"
                 echo "  备份数据到 \$backup_dir"
                 cp -r "$PANEL_DIR/data" "\$backup_dir"
             fi

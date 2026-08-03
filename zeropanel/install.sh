@@ -15,7 +15,7 @@ WHITE='\033[1;37m'
 NC='\033[0m'
 
 # 固定路径
-PANEL_DIR="$HOME/zeropanel"
+PANEL_DIR="$HOME/.zeropanel"
 WWW_DIR="$HOME/www"
 DATA_DIR="$PANEL_DIR/data"
 PANEL_DOWNLOAD_URL="https://raw.githubusercontent.com/2136206076/ZeroPanel/main/zeropanel_v2.zip"
@@ -95,14 +95,14 @@ uninstall_termux() {
         pkill -x mariadbd 2>/dev/null || true
         pkill -f php-fpm 2>/dev/null || true
 
-        if [ -d "$HOME/zeropanel/data" ]; then
+        if [ -d "$HOME/.zeropanel/data" ]; then
             local backup_dir="$HOME/zeropanel_data_backup_$(date +%Y%m%d%H%M%S)"
             echo -e "  ${YELLOW}备份数据到 $backup_dir${NC}"
-            cp -r "$HOME/zeropanel/data" "$backup_dir"
+            cp -r "$HOME/.zeropanel/data" "$backup_dir"
         fi
 
         echo -e "  ${CYAN}删除面板文件...${NC}"
-        rm -rf "$HOME/zeropanel"
+        rm -rf "$HOME/.zeropanel"
         rm -rf "$HOME/www"
         rm -f "$PREFIX/etc/nginx/conf.d/zeropanel*.conf"
         rm -f "$HOME/bin/zeropanel"
@@ -279,7 +279,7 @@ EOF
     cat > "$HOME/bin/zeropanel" << 'SCRIPT'
 #!/data/data/com.termux/files/usr/bin/bash
 
-PANEL_DIR="$HOME/zeropanel"
+PANEL_DIR="$HOME/.zeropanel"
 LOG_FILE="$PANEL_DIR/data/panel.log"
 DATA_DIR="$PANEL_DIR/data"
 

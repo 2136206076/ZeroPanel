@@ -1,5 +1,17 @@
 # ZeroPanel Proot 高级版更新日志
 
+## v2.0.9
+
+### 重要变更
+
+- **面板程序目录迁移到更安全的位置**
+  - Proot 高级版面板程序目录从 `/var/www/zeropanel` 迁移到 `/var/lib/zeropanel`
+  - 网站目录保持 `/var/www/html` 不变
+  - 文件管理器的允许范围限定为 `/var/www/html` 和 `/var/lib/zeropanel/data`
+  - 避免在文件管理器中直接看到并误删面板程序文件（`app.py`、`static`、`templates` 等）
+
+---
+
 ## v2.0.8
 
 ### 重要变更

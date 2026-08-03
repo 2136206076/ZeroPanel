@@ -123,6 +123,7 @@ pip3 install flask flask-cors werkzeug
 cd ~
 curl -fsSL -O https://raw.githubusercontent.com/2136206076/ZeroPanel/main/zeropanel_v2.zip
 unzip zeropanel_v2.zip -d ~
+# 面板程序会解压到 ~/.zeropanel，网站目录为 ~/www
 zeropanel start
 ```
 
@@ -132,9 +133,10 @@ zeropanel start
 apt-get update -y
 apt-get install -y python3 python3-pip nginx mariadb-server php-fpm php-mysql curl unzip cron
 pip3 install --break-system-packages flask flask-cors werkzeug || pip3 install flask flask-cors werkzeug
-cd /var/www
+cd /var/lib
 curl -fsSL -O https://raw.githubusercontent.com/2136206076/ZeroPanel/main/zeropanel-proot_v2.zip
-unzip zeropanel-proot_v2.zip -d /var/www
+unzip zeropanel-proot_v2.zip -d /var/lib
+# 面板程序会解压到 /var/lib/zeropanel，网站目录为 /var/www/html
 zeropanel start
 ```
 
@@ -256,7 +258,7 @@ zeropanel log
 
 ```bash
 zeropanel stop
-rm -rf ~/zeropanel
+rm -rf ~/.zeropanel
 rm -f $PREFIX/bin/zeropanel
 ```
 
@@ -264,7 +266,7 @@ rm -f $PREFIX/bin/zeropanel
 
 ```bash
 zeropanel stop
-rm -rf /var/www/zeropanel
+rm -rf /var/lib/zeropanel
 rm -f /usr/local/bin/zeropanel
 ```
 
