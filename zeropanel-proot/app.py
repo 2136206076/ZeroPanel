@@ -56,7 +56,8 @@ UPDATE_CONFIG = {
 
 NGINX_CONF_DIR = Path('/etc/nginx/conf.d')
 PHP_FPM_DIR = Path('/etc/php')
-WEB_ROOT_BASE = Path('/var/www')
+# 网站根目录基准：与 WWW_DIR 保持一致，确保文件管理器能访问网站文件
+WEB_ROOT_BASE = WWW_DIR
 NGINX_LOG_DIR = Path('/var/log/nginx')
 
 # 允许的文件扩展名

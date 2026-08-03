@@ -51,6 +51,8 @@ UPDATE_CONFIG = {
 }
 UPLOAD_DIR = DATA_DIR / 'uploads'
 WWW_DIR = Path.home() / 'www'
+# 网站根目录基准：与 WWW_DIR 保持一致
+WEB_ROOT_BASE = WWW_DIR
 NGINX_CONF_DIR = Path(os.environ.get('PREFIX', '/data/data/com.termux/files/usr')) / 'etc' / 'nginx' / 'conf.d'
 
 # 允许的文件扩展名
