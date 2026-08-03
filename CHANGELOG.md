@@ -1,5 +1,15 @@
 # ZeroPanel 更新日志
 
+## v2.0.6
+
+### 问题修复
+
+- **Proot 版安装部署路径错误**
+  - 修复安装完成后面板无法启动、`zeropanel log` 提示找不到 `/var/www/zeropanel/app.py` 的问题
+  - 原因：`zeropanel-proot_v2.zip` 顶层目录为 `zeropanel-proot/`，原脚本解压到 `/var/www` 后生成 `/var/www/zeropanel-proot/`，与 `PANEL_DIR=/var/www/zeropanel` 不一致
+  - 修复：解压到临时目录后，将 `zeropanel-proot` 移动到 `/var/www/zeropanel`
+  - 同步更新 Termux 普通版与 Proot 高级版安装脚本中的 Proot 安装流程
+
 ## v2.0.5
 
 ### 问题修复

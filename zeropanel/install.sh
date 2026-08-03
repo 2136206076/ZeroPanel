@@ -193,15 +193,18 @@ install_proot() {
         rm -rf "$PANEL_DIR"
     fi
 
-    mkdir -p "$PANEL_DIR"
-    if unzip -q "$zip_file" -d "/var/www"; then
+    local extract_tmp=$(mktemp -d)
+    if unzip -q "$zip_file" -d "$extract_tmp"; then
+        # zip 顶层目录为 zeropanel-proot，需移动到 /var/www/zeropanel
+        rm -rf "$PANEL_DIR"
+        mv "$extract_tmp/zeropanel-proot" "$PANEL_DIR"
         print_success "面板部署完成"
     else
         print_error "面板解压失败"
-        rm -rf "$tmp_dir"
+        rm -rf "$tmp_dir" "$extract_tmp"
         exit 1
     fi
-    rm -rf "$tmp_dir"
+    rm -rf "$tmp_dir" "$extract_tmp"
 
     # 步骤 5: 安装 Python 依赖
     print_step 5 $total_steps "安装 Python 依赖"
