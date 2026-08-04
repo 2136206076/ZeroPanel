@@ -34,9 +34,9 @@ async function loadFiles(path = '') {
 function renderBreadcrumb(path, parent) {
     const breadcrumb = document.getElementById('breadcrumb');
     const parts = path.split('/');
-    const homePath = '~/www';
+    const homePath = '/';
     
-    let html = `<a href="#" onclick="navigateTo('')">${homePath}</a>`;
+    let html = `<a href="#" onclick="navigateTo('/')">${homePath}</a>`;
     
     let accumulatedPath = '';
     for (let i = 0; i < parts.length; i++) {

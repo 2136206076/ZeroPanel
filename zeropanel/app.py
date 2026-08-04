@@ -58,16 +58,35 @@ NGINX_CONF_DIR = Path(os.environ.get('PREFIX', '/data/data/com.termux/files/usr'
 # 允许的文件扩展名
 ALLOWED_EXTENSIONS = {'txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'zip', 'tar', 'gz', 'sql', 'php', 'html', 'css', 'js', 'json', 'xml', 'md'}
 
-# 允许文件操作的根目录
-ALLOWED_ROOTS = [WWW_DIR, DATA_DIR]
+# 允许文件操作的根目录：整个文件系统，便于管理建站文件等任意目录
+# 但面板程序目录受保护，避免误删面板文件（数据目录 DATA_DIR 仍可访问）
+ALLOWED_ROOTS = [Path('/')]
+PROTECTED_DIRS = [BASE_DIR]
 
 
 def resolve_allowed_path(path):
-    """解析并校验路径，返回 (安全路径, 是否允许)。防止路径遍历。"""
+    """解析并校验路径，返回 (安全路径, 是否允许)。防止路径遍历。
+
+    允许访问整个文件系统，但面板程序目录（BASE_DIR）受保护，
+    数据目录（DATA_DIR，含备份、上传）仍可访问。
+    """
     try:
         resolved = Path(path).resolve()
     except Exception:
         return None, False
+    # 数据目录始终允许（备份、上传等）
+    try:
+        resolved.relative_to(DATA_DIR)
+        return resolved, True
+    except ValueError:
+        pass
+    # 面板程序目录受保护，禁止文件管理操作
+    for root in PROTECTED_DIRS:
+        try:
+            resolved.relative_to(root)
+            return None, False
+        except ValueError:
+            continue
     for root in ALLOWED_ROOTS:
         try:
             resolved.relative_to(root)
@@ -1432,8 +1451,8 @@ def api_list_files():
     # 排序：目录在前，然后按名称排序
     files.sort(key=lambda x: (x['type'] != 'directory', x['name'].lower()))
 
-    www_resolved = WWW_DIR.resolve()
-    is_root = path_obj.resolve() == www_resolved
+    root_resolved = Path('/').resolve()
+    is_root = path_obj.resolve() == root_resolved
 
     return jsonify({
         'path': str(path_obj),

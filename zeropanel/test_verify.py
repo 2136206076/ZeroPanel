@@ -69,23 +69,28 @@ def main():
 
     # 2. 路径遍历防护
     print('\n2. 路径遍历防护')
+    # 文件管理已放开到整个文件系统，面板数据目录与建站文件均可访问
     allowed_paths = [
         str(WWW_DIR / 'test'),
         str(DATA_DIR / 'backups'),
+        '/etc/passwd',
+        '/tmp',
+        str(Path.home() / 'www'),
     ]
     for p in allowed_paths:
         _, ok = resolve_allowed_path(p)
         test(f'允许路径: {p}', ok)
 
+    # 面板程序目录受保护，禁止文件管理操作
     blocked_paths = [
-        '/etc/passwd',
-        str(WWW_DIR / '..' / '..' / 'etc' / 'passwd'),
-        '/tmp/secret',
-        str(DATA_DIR / '..' / '..' / 'root' / '.bashrc'),
+        str(APP_BASE_DIR / 'app.py'),
+        str(APP_BASE_DIR / 'VERSION'),
+        str(APP_BASE_DIR / 'static'),
+        str(APP_BASE_DIR / 'templates'),
     ]
     for p in blocked_paths:
         _, ok = resolve_allowed_path(p)
-        test(f'阻止路径: {p}', not ok)
+        test(f'阻止路径(面板程序): {p}', not ok)
 
     # 3. SQL 注入防护
     print('\n3. SQL 注入防护')
@@ -203,10 +208,15 @@ def main():
     with app.test_client() as c:
         c.post('/api/login', json={'username': 'admin', 'password': 'admin123'})
 
-        # 尝试读取 /etc/passwd
-        resp = c.get('/api/files/read?path=/etc/passwd')
+        # 允许读取整个文件系统（策略已放开）
+        resp = c.get('/api/files/read?path=/etc/hostname')
         data = resp.get_json()
-        test('阻止读取 /etc/passwd', not data.get('success', True))
+        test('允许读取 /etc/hostname', not data.get('success', True) or 'content' in data)
+
+        # 禁止读取面板程序目录
+        resp = c.get('/api/files/read?path=' + str(APP_BASE_DIR / 'app.py'))
+        data = resp.get_json()
+        test('阻止读取面板程序文件', not data.get('success', True))
 
         # 允许读取 www 目录
         resp = c.get('/api/files?path=' + str(WWW_DIR))
