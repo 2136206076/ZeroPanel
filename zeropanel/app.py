@@ -1854,13 +1854,32 @@ def _backup_current_version(backup_file):
     base_candidates = [BASE_DIR]
     if str(BASE_DIR) == str(Path.home() / '.zeropanel'):
         base_candidates.append(Path.home() / 'zeropanel')
+    elif str(BASE_DIR) == str(Path.home() / 'zeropanel'):
+        base_candidates.append(Path.home() / '.zeropanel')
+
+    # 去重候选目录
+    seen = set()
+    unique_candidates = []
+    for c in base_candidates:
+        key = str(c.resolve())
+        if key not in seen:
+            seen.add(key)
+            unique_candidates.append(c)
 
     base_resolved = None
-    for candidate in base_candidates:
+    # 1. 优先选择包含面板核心文件 app.py 的目录（真正的代码目录）
+    for candidate in unique_candidates:
         resolved = candidate.resolve()
-        if resolved.exists() and any(resolved.iterdir()):
+        if resolved.exists() and (resolved / 'app.py').is_file():
             base_resolved = resolved
             break
+    # 2. 回退：选择第一个非空目录
+    if base_resolved is None:
+        for candidate in unique_candidates:
+            resolved = candidate.resolve()
+            if resolved.exists() and any(resolved.iterdir()):
+                base_resolved = resolved
+                break
 
     if base_resolved is None:
         raise RuntimeError(f'面板目录不存在或为空: {BASE_DIR}')
