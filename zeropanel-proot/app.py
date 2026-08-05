@@ -64,9 +64,10 @@ NGINX_LOG_DIR = Path('/var/log/nginx')
 ALLOWED_EXTENSIONS = {'txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'zip', 'tar', 'gz', 'sql', 'php', 'html', 'css', 'js', 'json', 'xml', 'md'}
 
 # 允许文件操作的根目录：整个文件系统，便于管理建站文件等任意目录
-# 但面板程序目录受保护，避免误删面板文件（数据目录 DATA_DIR 仍可访问）
+# 但面板程序目录受保护，避免误删面板文件；备份数据目录对文件管理隐藏
 ALLOWED_ROOTS = [Path('/')]
-PROTECTED_DIRS = [BASE_DIR]
+# 保护面板程序目录：标准安装目录 + 实际运行目录（兼容手动解压运行）
+PROTECTED_DIRS = [BASE_DIR, Path(__file__).parent.resolve()]
 
 # 常用 PHP 扩展列表
 COMMON_PHP_EXTENSIONS = [
@@ -78,20 +79,22 @@ COMMON_PHP_EXTENSIONS = [
 SUPPORTED_PHP_VERSIONS = ['7.4', '8.0', '8.1', '8.2', '8.3']
 
 
-def resolve_allowed_path(path):
+def resolve_allowed_path(path, allow_data=False):
     """解析并校验路径，返回 (安全路径, 是否允许)。防止路径遍历。
 
     允许访问整个文件系统，但面板程序目录（BASE_DIR）受保护，
-    数据目录（DATA_DIR，含备份、上传）仍可访问。
+    备份数据目录（DATA_DIR）默认对文件管理隐藏，仅内部功能放行。
     """
     try:
         resolved = Path(path).resolve()
     except Exception:
         return None, False
-    # 数据目录始终允许（备份、上传等）
+    # 数据目录：默认禁止（备份文件放安全位置），仅内部功能 allow_data=True 时放行
     try:
         resolved.relative_to(DATA_DIR)
-        return resolved, True
+        if allow_data:
+            return resolved, True
+        return None, False
     except ValueError:
         pass
     # 面板程序目录受保护，禁止文件管理操作
@@ -1579,7 +1582,7 @@ def api_restore_database(name):
     if not backup_file:
         return jsonify({'success': False, 'message': '请选择备份文件'})
 
-    backup_path, allowed = resolve_allowed_path(backup_file)
+    backup_path, allowed = resolve_allowed_path(backup_file, allow_data=True)
     if not allowed or backup_path is None or not backup_path.exists():
         return jsonify({'success': False, 'message': '备份文件不存在或路径非法'})
 
@@ -1659,7 +1662,7 @@ def api_import_database():
         sql_path = data.get('path', '')
         if not sql_path:
             return jsonify({'success': False, 'message': '请提供 SQL 文件'})
-        tmp_path, allowed = resolve_allowed_path(sql_path)
+        tmp_path, allowed = resolve_allowed_path(sql_path, allow_data=True)
         if not allowed or tmp_path is None or not tmp_path.exists():
             return jsonify({'success': False, 'message': 'SQL 文件不存在或路径非法'})
 
@@ -1833,7 +1836,7 @@ def api_restart_php_fpm():
 @login_required
 def api_list_files():
     """获取文件列表"""
-    path = request.args.get('path', str(WWW_DIR))
+    path = request.args.get('path') or str(WWW_DIR)
 
     path_obj, allowed = resolve_allowed_path(path)
     if not allowed or path_obj is None:
@@ -2684,7 +2687,7 @@ def api_rollback():
         data = request.get_json() or {}
         backup_file = data.get('backup_file')
 
-        backup_path, allowed = resolve_allowed_path(backup_file)
+        backup_path, allowed = resolve_allowed_path(backup_file, allow_data=True)
         if not allowed or backup_path is None or not backup_path.exists():
             return jsonify({'success': False, 'message': '备份文件不存在或路径非法'})
 

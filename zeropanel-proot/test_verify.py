@@ -69,10 +69,9 @@ def main():
 
     # 2. 路径遍历防护
     print('\n2. 路径遍历防护')
-    # 文件管理已放开到整个文件系统，面板数据目录与建站文件均可访问
+    # 文件管理已放开到整个文件系统，建站文件与系统路径均可访问
     allowed_paths = [
         str(WWW_DIR / 'test'),
-        str(DATA_DIR / 'backups'),
         '/etc/passwd',
         '/tmp',
         '/var/www/html',
@@ -91,6 +90,12 @@ def main():
     for p in blocked_paths:
         _, ok = resolve_allowed_path(p)
         test(f'阻止路径(面板程序): {p}', not ok)
+
+    # 备份数据目录默认对文件管理隐藏，仅内部功能 allow_data=True 放行
+    _, ok = resolve_allowed_path(str(DATA_DIR / 'backups'))
+    test('阻止路径(备份数据): ' + str(DATA_DIR / 'backups'), not ok)
+    _, ok = resolve_allowed_path(str(DATA_DIR / 'backups'), allow_data=True)
+    test('内部功能放行备份数据', ok)
 
     # 3. SQL 注入防护
     print('\n3. SQL 注入防护')
@@ -222,6 +227,16 @@ def main():
         resp = c.get('/api/files?path=' + str(WWW_DIR))
         data = resp.get_json()
         test('允许读取 www 目录', 'files' in data)
+
+        # 默认打开网站目录（不传 path 或空 path 时回退 WWW_DIR）
+        resp = c.get('/api/files')
+        data = resp.get_json()
+        test('默认打开网站目录', data.get('path') == str(WWW_DIR))
+
+        # 备份数据目录对文件管理隐藏
+        resp = c.get('/api/files?path=' + str(DATA_DIR / 'backups'))
+        data = resp.get_json()
+        test('备份数据目录对文件管理隐藏', data.get('path') != str(DATA_DIR / 'backups'))
 
     # 11. 数据库名注入防护
     print('\n11. 数据库名注入防护')
