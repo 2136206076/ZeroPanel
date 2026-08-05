@@ -1,5 +1,21 @@
 # ZeroPanel Termux 轻量版更新日志
 
+## v2.0.17
+
+### 新增功能
+
+- **卸载面板支持两种方式**
+  - 仅卸载面板程序：删除面板文件，保留网站、数据与相关服务（数据自动移出面板目录，可恢复）
+  - 完全卸载：删除面板、数据、网站、Nginx 站点配置与快捷命令，移除 PATH 配置，并卸载 Nginx/MariaDB/PHP-FPM 服务及 MariaDB 数据目录（数据先自动备份）
+  - 运行 `zeropanel uninstall` 或 `install.sh --uninstall` 后选择卸载方式，均可随时取消
+
+### 问题修复
+
+- **修复完全卸载时 Nginx 站点配置清理不生效**
+  - 原 `rm -f "$PREFIX/etc/nginx/conf.d/zeropanel*.conf"` 中 glob 被引号包裹无法展开，站点配置从未被删除，现已修复
+
+---
+
 ## v2.0.16
 
 ### 问题修复

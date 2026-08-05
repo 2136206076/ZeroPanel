@@ -80,13 +80,62 @@ check_proot_environment() {
     exit 1
 }
 
-# 卸载流程
-uninstall_proot() {
+# 仅卸载面板程序文件（保留网站、数据、相关服务）
+uninstall_panel_only() {
     print_title
     echo ""
-    echo -e "  ${YELLOW}卸载 ZeroPanel (Proot 高级版)${NC}"
+    echo -e "  ${YELLOW}仅卸载面板程序文件${NC}"
+    echo -e "  ${WHITE}保留内容:${NC}"
+    echo -e "    - 网站文件: ${CYAN}$WWW_DIR${NC}"
+    echo -e "    - 面板数据: ${CYAN}$DATA_DIR${NC}（保留并移出面板目录）"
+    echo -e "    - 相关服务: Nginx / MariaDB / PHP-FPM"
     echo ""
-    read -p "确定要卸载吗？数据将备份到 /var/lib/zeropanel_data_backup_*. [y/N]: " confirm
+    read -p "确定仅卸载面板程序？数据与网站将保留。 [y/N]: " confirm
+    if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
+        echo -e "  ${CYAN}停止面板进程...${NC}"
+        pkill -f "python3 app.py" 2>/dev/null || true
+        pkill -f "python app.py" 2>/dev/null || true
+        sleep 1
+
+        if [ -d "$PANEL_DIR/data" ]; then
+            local data_bak="${PANEL_DIR}.data_backup_$(date +%Y%m%d%H%M%S)"
+            echo -e "  ${YELLOW}保留面板数据到 $data_bak${NC}"
+            mv "$PANEL_DIR/data" "$data_bak"
+        fi
+
+        echo -e "  ${CYAN}删除面板程序文件...${NC}"
+        rm -rf "$PANEL_DIR"
+
+        echo ""
+        print_separator
+        echo -e "              ${GREEN}面板程序已卸载${NC}"
+        print_separator
+        echo ""
+        echo -e "  ${WHITE}已保留:${NC}"
+        echo -e "    - 网站文件: ${CYAN}$WWW_DIR${NC}"
+        echo -e "    - 面板数据: ${CYAN}${data_bak:-未找到数据目录}${NC}"
+        echo -e "    - 相关服务: Nginx / MariaDB / PHP-FPM"
+        echo ""
+        echo -e "  ${YELLOW}如需恢复：重新运行安装脚本后，将数据目录移回 ${CYAN}$PANEL_DIR/data${NC}"
+    else
+        echo -e "  ${YELLOW}已取消卸载${NC}"
+    fi
+}
+
+# 完全卸载（删除面板、数据、网站，并卸载相关服务）
+uninstall_full() {
+    print_title
+    echo ""
+    echo -e "  ${RED}完全卸载 ZeroPanel 及所有相关组件${NC}"
+    echo -e "  ${WHITE}将删除:${NC}"
+    echo -e "    - 面板程序与数据: ${CYAN}$PANEL_DIR${NC}"
+    echo -e "    - 网站文件: ${CYAN}$WWW_DIR${NC}"
+    echo -e "    - Nginx 站点配置: ${CYAN}/etc/nginx/conf.d/zeropanel*.conf${NC}"
+    echo -e "    - 快捷命令: ${CYAN}/usr/local/bin/zeropanel${NC}"
+    echo -e "    - 相关服务: ${CYAN}Nginx / MariaDB / PHP-FPM${NC}"
+    echo -e "    - MariaDB 数据目录: ${CYAN}/var/lib/mysql${NC}"
+    echo ""
+    read -p "此操作不可恢复！数据将先备份到 /var/lib/zeropanel_data_backup_*。确认完全卸载？[y/N]: " confirm
     if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
         echo -e "  ${CYAN}停止相关服务...${NC}"
         service nginx stop 2>/dev/null || true
@@ -95,28 +144,52 @@ uninstall_proot() {
         service php*-fpm stop 2>/dev/null || true
         pkill -f "python3 app.py" 2>/dev/null || true
         pkill -f "python app.py" 2>/dev/null || true
+        sleep 2
 
-        if [ -d "/var/lib/zeropanel/data" ]; then
+        if [ -d "$PANEL_DIR/data" ]; then
             local backup_dir="/var/lib/zeropanel_data_backup_$(date +%Y%m%d%H%M%S)"
-            echo -e "  ${YELLOW}备份数据到 $backup_dir${NC}"
-            cp -r "/var/lib/zeropanel/data" "$backup_dir"
+            echo -e "  ${YELLOW}备份面板数据到 $backup_dir${NC}"
+            cp -r "$PANEL_DIR/data" "$backup_dir"
         fi
 
-        echo -e "  ${CYAN}删除面板文件...${NC}"
-        rm -rf "/var/lib/zeropanel"
-        rm -rf "/var/www"
+        echo -e "  ${CYAN}删除面板、网站与配置...${NC}"
+        rm -rf "$PANEL_DIR"
+        rm -rf "$WWW_DIR"
         rm -f /etc/nginx/conf.d/zeropanel*.conf
         rm -f /usr/local/bin/zeropanel
 
+        echo -e "  ${CYAN}卸载相关服务 (nginx / mariadb-server / php-fpm / php-mysql)...${NC}"
+        DEBIAN_FRONTEND=noninteractive apt-get remove -y --purge nginx mariadb-server php-fpm php-mysql 2>&1 | tail -n 3 || true
+        rm -rf /var/lib/mysql
+
         echo ""
         print_separator
-        echo -e "              ${GREEN}ZeroPanel 已卸载${NC}"
+        echo -e "              ${GREEN}ZeroPanel 已完全卸载${NC}"
         print_separator
         echo ""
         [ -n "${backup_dir:-}" ] && echo -e "  ${YELLOW}数据备份: $backup_dir${NC}"
     else
         echo -e "  ${YELLOW}已取消卸载${NC}"
     fi
+}
+
+# 卸载流程（选择卸载方式）
+uninstall_proot() {
+    print_title
+    echo ""
+    echo -e "  ${YELLOW}卸载 ZeroPanel (Proot 高级版)${NC}"
+    echo ""
+    echo -e "  ${WHITE}请选择卸载方式:${NC}"
+    echo ""
+    echo -e "    ${CYAN}1)${NC} 仅卸载面板程序  - 删除面板文件，保留网站、数据与相关服务"
+    echo -e "    ${CYAN}2)${NC} 完全卸载        - 删除面板、数据、网站，并卸载 Nginx/MariaDB/PHP-FPM 服务"
+    echo ""
+    read -p "请输入选项 (1/2)，直接回车取消: " mode
+    case "$mode" in
+        1) uninstall_panel_only ;;
+        2) uninstall_full ;;
+        *) echo -e "  ${YELLOW}已取消卸载${NC}" ;;
+    esac
 }
 
 # 安装流程
@@ -277,6 +350,7 @@ EOF
 PANEL_DIR="$PANEL_DIR"
 LOG_FILE="$PANEL_DIR/data/panel.log"
 DATA_DIR="$PANEL_DIR/data"
+WWW_DIR="/var/www"
 mkdir -p "\$DATA_DIR"
 
 python_cmd() {
@@ -343,22 +417,48 @@ case "\$1" in
         ;;
     uninstall)
         echo -e "\033[1;37m卸载 ZeroPanel...\033[0m"
-        read -p "确定要卸载吗？数据将备份到 /var/lib/zeropanel_data_backup_*. [y/N]: " confirm
-        if [ "\$confirm" = "y" ] || [ "\$confirm" = "Y" ]; then
-            "\$0" stop
-            if [ -d "$PANEL_DIR/data" ]; then
-                backup_dir="/var/lib/zeropanel_data_backup_\$(date +%Y%m%d%H%M%S)"
-                echo "  备份数据到 \$backup_dir"
-                cp -r "$PANEL_DIR/data" "\$backup_dir"
-            fi
-            rm -rf "$PANEL_DIR"
-            rm -rf "/var/www"
-            rm -f /etc/nginx/conf.d/zeropanel*.conf
-            rm -f /usr/local/bin/zeropanel
-            echo -e "\033[0;32mZeroPanel 已卸载\033[0m"
-        else
-            echo "已取消"
-        fi
+        echo ""
+        echo -e "  \033[0;36m1)\033[0m 仅卸载面板程序  - 删除面板文件，保留网站、数据与相关服务"
+        echo -e "  \033[0;36m2)\033[0m 完全卸载        - 删除面板、数据、网站，并卸载 Nginx/MariaDB/PHP-FPM 服务"
+        echo ""
+        read -p "请输入选项 (1/2)，直接回车取消: " mode
+        case "\$mode" in
+            1)
+                PY_CMD=\$(python_cmd)
+                [ -n "\$PY_CMD" ] && pkill -f "\$PY_CMD app.py" 2>/dev/null || true
+                sleep 1
+                if [ -d "\$PANEL_DIR/data" ]; then
+                    data_bak="\${PANEL_DIR}.data_backup_\$(date +%Y%m%d%H%M%S)"
+                    echo "  保留面板数据到 \$data_bak"
+                    mv "\$PANEL_DIR/data" "\$data_bak"
+                fi
+                rm -rf "\$PANEL_DIR"
+                echo -e "\033[0;32m面板程序已卸载（数据与网站保留）\033[0m"
+                echo "  数据: \${data_bak:-未找到数据目录}"
+                echo "  网站: \$WWW_DIR"
+                echo "  恢复: 重新运行安装脚本后，将数据目录移回 \$PANEL_DIR/data"
+                ;;
+            2)
+                "\$0" stop
+                if [ -d "\$PANEL_DIR/data" ]; then
+                    backup_dir="/var/lib/zeropanel_data_backup_\$(date +%Y%m%d%H%M%S)"
+                    echo "  备份数据到 \$backup_dir"
+                    cp -r "\$PANEL_DIR/data" "\$backup_dir"
+                fi
+                rm -rf "\$PANEL_DIR"
+                rm -rf "\$WWW_DIR"
+                rm -f /etc/nginx/conf.d/zeropanel*.conf
+                rm -f /usr/local/bin/zeropanel
+                echo -e "\033[1;37m卸载相关服务 (nginx / mariadb-server / php-fpm / php-mysql)...\033[0m"
+                DEBIAN_FRONTEND=noninteractive apt-get remove -y --purge nginx mariadb-server php-fpm php-mysql 2>&1 | tail -n 3 || true
+                rm -rf /var/lib/mysql
+                echo -e "\033[0;32mZeroPanel 已完全卸载\033[0m"
+                [ -n "\${backup_dir:-}" ] && echo "  数据备份: \$backup_dir"
+                ;;
+            *)
+                echo "已取消"
+                ;;
+        esac
         ;;
     help|*)
         echo ""
@@ -369,7 +469,7 @@ case "\$1" in
         echo -e "  \033[0;36mzeropanel restart\033[0m    重启面板"
         echo -e "  \033[0;36mzeropanel status\033[0m     查看面板及服务运行状态"
         echo -e "  \033[0;36mzeropanel log\033[0m        查看面板运行日志（最后 50 行）"
-        echo -e "  \033[0;36mzeropanel uninstall\033[0m  卸载面板（卸载前会自动备份 data 目录）"
+        echo -e "  \033[0;36mzeropanel uninstall\033[0m  卸载面板（选择仅卸载面板或完全卸载）"
         echo -e "  \033[0;36mzeropanel help\033[0m       显示本帮助信息"
         echo ""
         ;;
@@ -456,7 +556,7 @@ main() {
     echo -e "    ${BLUE}zeropanel restart${NC}    - 重启面板"
     echo -e "    ${BLUE}zeropanel status${NC}     - 查看状态"
     echo -e "    ${BLUE}zeropanel log${NC}        - 查看日志"
-    echo -e "    ${BLUE}zeropanel uninstall${NC}  - 卸载面板"
+    echo -e "    ${BLUE}zeropanel uninstall${NC}  - 卸载面板（可选择仅卸载面板或完全卸载）"
     echo -e "    ${BLUE}zeropanel help${NC}       - 显示帮助"
     echo ""
     print_separator
