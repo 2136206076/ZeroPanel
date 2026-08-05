@@ -314,6 +314,85 @@ def main():
 
     app_module.run_command = original_run_command
 
+    # 13. PHP 版本可用性探测
+    print('\n13. PHP 版本可用性探测')
+
+    original_run_command = app_module.run_command
+
+    def _reset_cache():
+        app_module._php_availability_cache = {'ts': 0, 'data': {}}
+
+    # 源中存在该版本（Candidate 有版本号）
+    def mock_policy_available(cmd, shell=False):
+        if cmd and cmd[0] == 'apt-cache':
+            pkg = cmd[2] if len(cmd) > 2 else ''
+            return True, f'{pkg}:\n  Installed: (none)\n  Candidate: 8.2.32-1~deb12u1\n', ''
+        return original_run_command(cmd, shell=shell)
+
+    app_module.run_command = mock_policy_available
+    _reset_cache()
+    test('源中存在版本探测通过', app_module._php_version_available('8.2'))
+
+    # 源中不存在该版本（Candidate (none)）
+    def mock_policy_none(cmd, shell=False):
+        if cmd and cmd[0] == 'apt-cache':
+            pkg = cmd[2] if len(cmd) > 2 else ''
+            return True, f'{pkg}:\n  Installed: (none)\n  Candidate: (none)\n', ''
+        return original_run_command(cmd, shell=shell)
+
+    app_module.run_command = mock_policy_none
+    _reset_cache()
+    test('Candidate(none) 探测为不可用', not app_module._php_version_available('8.0'))
+
+    # 包完全不在索引中（apt-cache policy 输出为空）
+    def mock_policy_empty(cmd, shell=False):
+        if cmd and cmd[0] == 'apt-cache':
+            return True, '', ''
+        return original_run_command(cmd, shell=shell)
+
+    app_module.run_command = mock_policy_empty
+    _reset_cache()
+    test('索引无此包探测为不可用', not app_module._php_version_available('7.4'))
+
+    # apt-cache 命令执行失败
+    def mock_policy_fail(cmd, shell=False):
+        if cmd and cmd[0] == 'apt-cache':
+            return False, '', 'command not found'
+        return original_run_command(cmd, shell=shell)
+
+    app_module.run_command = mock_policy_fail
+    _reset_cache()
+    test('命令失败探测为不可用', not app_module._php_version_available('8.1'))
+
+    # 缓存：首次探测全量执行一次，30 秒内重复调用不再执行
+    calls = {'n': 0}
+
+    def mock_policy_count(cmd, shell=False):
+        if cmd and cmd[0] == 'apt-cache':
+            calls['n'] += 1
+            pkg = cmd[2] if len(cmd) > 2 else ''
+            return True, f'{pkg}:\n  Installed: (none)\n  Candidate: 8.2.32-1~deb12u1\n', ''
+        return original_run_command(cmd, shell=shell)
+
+    app_module.run_command = mock_policy_count
+    _reset_cache()
+    app_module._php_version_available('8.2')
+    app_module._php_version_available('8.2')
+    test('探测结果缓存生效', calls['n'] == len(app_module.SUPPORTED_PHP_VERSIONS))
+
+    # 版本列表接口返回 available 字段
+    app_module.run_command = mock_policy_available
+    _reset_cache()
+    with app.test_client() as c:
+        c.post('/api/login', json={'username': 'admin', 'password': 'admin123'})
+        data = c.get('/api/php/versions').get_json()
+    versions = data.get('versions', [])
+    test('版本列表包含 available 字段', all('available' in v for v in versions))
+    v82 = next((v for v in versions if v['version'] == '8.2'), None)
+    test('源中可用版本 available=True', v82 is not None and v82['available'])
+
+    app_module.run_command = original_run_command
+
     print('\n' + '=' * 50)
     print(f'验证完成：通过 {PASS} 项，失败 {FAIL} 项')
     if FAIL > 0:

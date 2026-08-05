@@ -288,6 +288,42 @@ def _is_php_fpm_running(php_version='8.0'):
     return success
 
 
+# PHP 版本可用性探测结果缓存（30 秒），避免每次请求都执行 apt-cache
+_php_availability_cache = {'ts': 0, 'data': {}}
+_PHP_AVAILABILITY_CACHE_TTL = 30
+
+
+def _php_version_available(php_version='8.0'):
+    """检查指定 PHP 版本在当前 apt 源中是否有候选包
+
+    Debian/Ubuntu 不同版本官方源提供的 PHP 版本不同，例如：
+    Debian 12 (bookworm) 只有 8.2，Debian 11 (bullseye) 只有 7.4。
+    对源中不存在的版本执行 apt-get install 会报「无法定位软件包」。
+    """
+    now = time.time()
+    if now - _php_availability_cache['ts'] < _PHP_AVAILABILITY_CACHE_TTL:
+        return _php_availability_cache['data'].get(php_version, False)
+
+    cache_data = {}
+    for ver in SUPPORTED_PHP_VERSIONS:
+        cache_data[ver] = _check_php_candidate(ver)
+    _php_availability_cache['ts'] = now
+    _php_availability_cache['data'] = cache_data
+    return cache_data.get(php_version, False)
+
+
+def _check_php_candidate(php_version):
+    """通过 apt-cache policy 判断 php{ver}-fpm 是否有安装候选"""
+    success, stdout, _ = run_command(['apt-cache', 'policy', f'php{php_version}-fpm'])
+    if not success:
+        return False
+    for line in stdout.splitlines():
+        if line.strip().startswith('Candidate:'):
+            cand = line.split(':', 1)[1].strip()
+            return bool(cand) and cand != '(none)'
+    return False
+
+
 def _detect_installed_php_versions():
     """通过 /etc/php/{ver}/fpm 目录检测已安装的 PHP 版本"""
     installed = []
@@ -1714,6 +1750,7 @@ def api_php_versions():
         versions.append({
             'version': ver,
             'installed': installed,
+            'available': _php_version_available(ver),
             'fpm_running': _is_php_fpm_running(ver) if installed else False
         })
     return jsonify({'success': True, 'versions': versions})
@@ -1748,10 +1785,16 @@ def api_manage_php_version():
 
     if action == 'install':
         success, stdout, stderr = run_command(['apt-get', 'install', '-y'] + packages, timeout=600)
+        if not success and ('无法定位软件包' in stderr or 'has no installation candidate' in stderr):
+            # 软件源索引可能过期，先更新源再重试一次
+            run_command(['apt-get', 'update'], timeout=600)
+            success, stdout, stderr = run_command(['apt-get', 'install', '-y'] + packages, timeout=600)
     else:
         success, stdout, stderr = run_command(['apt-get', 'remove', '--purge', '-y'] + packages, timeout=600)
 
     if not success:
+        if not _php_version_available(version):
+            return jsonify({'success': False, 'message': f'PHP {version} {action} 失败: 当前系统软件源中没有 PHP {version} 的软件包，请使用源中可用的版本'})
         return jsonify({'success': False, 'message': f'PHP {version} {action} 失败: {stderr or stdout}'})
 
     return jsonify({'success': True, 'message': f'PHP {version} {"安装" if action == "install" else "卸载"}成功'})

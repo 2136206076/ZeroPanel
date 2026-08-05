@@ -1725,6 +1725,21 @@ a:hover {
     background: var(--bg-hover);
 }
 
+.php-version-card.php-version-disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.php-version-card.php-version-disabled:hover {
+    border-color: var(--border-color);
+    background: var(--bg-secondary);
+}
+
+.php-version-note {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
 .php-version-header {
     display: flex;
     justify-content: space-between;

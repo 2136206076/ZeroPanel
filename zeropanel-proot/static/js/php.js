@@ -37,12 +37,14 @@ function renderPhpVersions() {
         return;
     }
     
-    container.innerHTML = phpVersions.map(v => `
-        <div class="php-version-card ${v.version === currentVersion ? 'active' : ''}" onclick="selectVersion('${v.version}')">
+    container.innerHTML = phpVersions.map(v => {
+        const disabled = !v.installed && !v.available;
+        return `
+        <div class="php-version-card ${v.version === currentVersion ? 'active' : ''} ${disabled ? 'php-version-disabled' : ''}" onclick="${disabled ? '' : `selectVersion('${v.version}')`}">
             <div class="php-version-header">
                 <span class="php-version-number">PHP ${v.version}</span>
-                <span class="badge ${v.installed ? 'badge-success' : 'badge-error'}">
-                    ${v.installed ? '已安装' : '未安装'}
+                <span class="badge ${v.installed ? 'badge-success' : (v.available ? 'badge-error' : 'badge-warning')}">
+                    ${v.installed ? '已安装' : (v.available ? '未安装' : '源中不可用')}
                 </span>
             </div>
             <div class="php-version-status">
@@ -59,12 +61,15 @@ function renderPhpVersions() {
                         重启 FPM
                     </button>
                     <button class="btn btn-small btn-danger" onclick="uninstallPhp('${v.version}')">卸载</button>
-                ` : `
+                ` : (v.available ? `
                     <button class="btn btn-small btn-primary" onclick="installPhp('${v.version}')">安装</button>
-                `}
+                ` : `
+                    <span class="php-version-note">当前系统源中无此版本</span>
+                `)}
             </div>
         </div>
-    `).join('');
+    `;
+    }).join('');
 }
 
 // 选择 PHP 版本

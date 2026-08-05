@@ -1,5 +1,17 @@
 # ZeroPanel Proot 高级版更新日志
 
+## v2.0.20
+
+### 修复
+
+- **修复 PHP 版本安装失败问题**
+  - 不同 Debian/Ubuntu 官方源提供的 PHP 版本不同（如 Debian 12/bookworm 只有 8.2），此前面板固定列出全部版本，安装源中不存在的版本会报「E: 无法定位软件包 php8.0-fpm」
+  - 新增 PHP 版本可用性探测：通过 `apt-cache policy` 检测各版本是否在当前软件源中有候选包，源中不存在的版本在面板中标记「源中不可用」并禁用安装按钮
+  - 安装失败且提示「无法定位软件包 / has no installation candidate」时，自动 `apt-get update` 后重试一次
+  - 探测结果缓存 30 秒，避免频繁请求拖慢 PHP 管理页加载
+
+---
+
 ## v2.0.19
 
 ### 新增功能
