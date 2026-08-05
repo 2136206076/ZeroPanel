@@ -7,6 +7,7 @@ ZeroPanel v2.0 - 轻量级建站面板
 
 import os
 import re
+import ipaddress
 import json
 import time
 import uuid
@@ -473,6 +474,20 @@ def get_safe_domain(domain):
     return re.sub(r'[^a-zA-Z0-9_.-]', '_', domain)
 
 
+def is_valid_domain(domain):
+    """校验站点域名，支持域名、IP地址、IPv6地址、localhost"""
+    if re.match(r'^[a-zA-Z0-9][-a-zA-Z0-9]{0,62}(\.[a-zA-Z0-9][-a-zA-Z0-9]{0,62})*$', domain):
+        return True
+    if re.match(r'^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$', domain):
+        return True
+    if re.match(r'^localhost$', domain):
+        return True
+    try:
+        return isinstance(ipaddress.ip_address(domain), ipaddress.IPv6Address)
+    except ValueError:
+        return False
+
+
 def get_nginx_config_path(domain, port=8080):
     """获取 Nginx 配置文件路径"""
     safe_domain = get_safe_domain(domain)
@@ -696,13 +711,9 @@ def api_create_website():
     if port < 1024 or port > 65535:
         return jsonify({'success': False, 'message': '端口范围必须在 1024-65535 之间'})
     
-    # 验证域名格式（支持域名、IP地址、localhost，不再允许带端口）
-    domain_pattern = r'^[a-zA-Z0-9][-a-zA-Z0-9]{0,62}(\.[a-zA-Z0-9][-a-zA-Z0-9]{0,62})*$'
-    ip_pattern = r'^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$'
-    localhost_pattern = r'^localhost$'
-    
-    if not (re.match(domain_pattern, domain) or re.match(ip_pattern, domain) or re.match(localhost_pattern, domain)):
-        return jsonify({'success': False, 'message': '域名格式不正确，支持域名、IP地址、localhost（不带端口）'})
+    # 验证域名格式（支持域名、IP地址、IPv6地址、localhost，不再允许带端口）
+    if not is_valid_domain(domain):
+        return jsonify({'success': False, 'message': '域名格式不正确，支持域名、IP地址、IPv6地址、localhost（不带端口）'})
     
     # 检查端口是否已被其他网站使用
     conn = sqlite3.connect(DB_PATH)

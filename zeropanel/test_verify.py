@@ -24,6 +24,7 @@ from app import (
     quote_string,
     get_system_stats,
     get_safe_domain,
+    is_valid_domain,
     get_nginx_config_path,
     generate_nginx_config,
     _safe_extract_update,
@@ -119,6 +120,12 @@ def main():
     print('\n5. 安全域名生成')
     test('普通域名', get_safe_domain('example.com') == 'example.com')
     test('含非法字符域名', get_safe_domain('exa/mple.com:80') == 'exa_mple.com_80')
+    test('域名校验通过', is_valid_domain('example.com'))
+    test('IPv4 校验通过', is_valid_domain('127.0.0.1'))
+    test('localhost 校验通过', is_valid_domain('localhost'))
+    test('IPv6 字面量校验通过', is_valid_domain('::1'))
+    test('IPv6 地址校验通过', is_valid_domain('2001:db8::1'))
+    test('非法域名被拒绝', not is_valid_domain('exa mple.com'))
 
     # 6. Nginx 配置生成
     print('\n6. Nginx 配置生成')
