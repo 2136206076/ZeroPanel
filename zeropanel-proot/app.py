@@ -39,7 +39,8 @@ DATA_DIR = BASE_DIR / 'data'
 DB_PATH = DATA_DIR / 'panel.db'
 BACKUP_DIR = DATA_DIR / 'backups'
 UPLOAD_DIR = DATA_DIR / 'uploads'
-WWW_DIR = Path('/var/www/html')
+# 网站根目录：文件管理默认打开目录与创建网站根目录均以此为基准
+WWW_DIR = Path('/var/www')
 
 # 面板版本信息：从本地 VERSION 文件读取
 try:

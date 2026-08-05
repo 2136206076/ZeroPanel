@@ -16,7 +16,7 @@ NC='\033[0m'
 
 # 固定路径
 PANEL_DIR="/var/lib/zeropanel"
-WWW_DIR="/var/www/html"
+WWW_DIR="/var/www"
 DATA_DIR="$PANEL_DIR/data"
 PANEL_DOWNLOAD_URL="https://raw.githubusercontent.com/2136206076/ZeroPanel/main/zeropanel-proot_v2.zip"
 
@@ -104,7 +104,7 @@ uninstall_proot() {
 
         echo -e "  ${CYAN}删除面板文件...${NC}"
         rm -rf "/var/lib/zeropanel"
-        rm -rf "/var/www/html"
+        rm -rf "/var/www"
         rm -f /etc/nginx/conf.d/zeropanel*.conf
         rm -f /usr/local/bin/zeropanel
 
@@ -352,7 +352,7 @@ case "\$1" in
                 cp -r "$PANEL_DIR/data" "\$backup_dir"
             fi
             rm -rf "$PANEL_DIR"
-            rm -rf "/var/www/html"
+            rm -rf "/var/www"
             rm -f /etc/nginx/conf.d/zeropanel*.conf
             rm -f /usr/local/bin/zeropanel
             echo -e "\033[0;32mZeroPanel 已卸载\033[0m"
