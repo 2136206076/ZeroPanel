@@ -493,6 +493,7 @@ def generate_nginx_config(domain, root_path, php_version='8.0', port=8080):
     config_lines = [
         'server {',
         '    listen ' + str(port) + ';',
+        '    listen [::]:' + str(port) + ' ipv6only=on;',
         '    server_name ' + domain + ';',
         '    root "' + root_path.replace('"', '\\"') + '";',
         '    index index.php index.html index.htm;',

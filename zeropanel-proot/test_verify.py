@@ -124,6 +124,7 @@ def main():
     print('\n6. Nginx 配置生成')
     config = generate_nginx_config('example.com', '/home/user/www/example.com', '8.0', 8080)
     test('配置包含监听端口', 'listen 8080;' in config)
+    test('配置包含 IPv6 双栈监听', 'listen [::]:8080 ipv6only=on;' in config)
     test('配置包含域名', 'server_name example.com;' in config)
     test('配置包含 PHP sock', 'php8.0-fpm.sock' in config)
     test('配置包含根目录', 'root "/home/user/www/example.com";' in config)
