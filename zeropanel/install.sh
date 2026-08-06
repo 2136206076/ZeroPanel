@@ -18,6 +18,8 @@ NC='\033[0m'
 PANEL_DIR="$HOME/.zeropanel"
 WWW_DIR="$HOME/www"
 DATA_DIR="$PANEL_DIR/data"
+# 统一备份根目录：云更新备份与卸载备份共用（与面板目录平级，卸载不影响）
+BACKUP_ROOT="$HOME/.zeropanel_backups"
 PANEL_DOWNLOAD_URL="https://raw.githubusercontent.com/2136206076/ZeroPanel/main/zeropanel_v2.zip"
 
 # 打印分隔线
@@ -47,6 +49,23 @@ print_error() { echo -e "  ${RED}✗${NC} $1"; }
 
 command_exists() {
     command -v "$1" >/dev/null 2>&1
+}
+
+# 备份面板数据到统一备份根目录（tar 优先，失败回退目录拷贝，再失败输出空串）
+backup_panel_data() {
+    local stamp=$(date +%Y%m%d%H%M%S)
+    mkdir -p "$BACKUP_ROOT"
+    local dest="$BACKUP_ROOT/zeropanel_data_${stamp}.tar.gz"
+    if command_exists tar && tar -czf "$dest" -C "$(dirname "$DATA_DIR")" "$(basename "$DATA_DIR")" >/dev/null 2>&1; then
+        echo "$dest"
+    else
+        local dir_dest="$BACKUP_ROOT/zeropanel_data_${stamp}"
+        if cp -r "$DATA_DIR" "$dir_dest" >/dev/null 2>&1; then
+            echo "$dir_dest"
+        else
+            echo ""
+        fi
+    fi
 }
 
 detect_python_cmd() {
@@ -86,7 +105,7 @@ uninstall_panel_only() {
     echo -e "  ${YELLOW}仅卸载面板程序文件${NC}"
     echo -e "  ${WHITE}保留内容:${NC}"
     echo -e "    - 网站文件: ${CYAN}$WWW_DIR${NC}"
-    echo -e "    - 面板数据: ${CYAN}$DATA_DIR${NC}（保留并移出面板目录）"
+    echo -e "    - 面板数据: ${CYAN}$DATA_DIR${NC}（可先备份到统一备份目录）"
     echo -e "    - 相关服务: Nginx / MariaDB / PHP-FPM"
     echo ""
     read -p "确定仅卸载面板程序？数据与网站将保留。 [y/N]: " confirm
@@ -96,10 +115,19 @@ uninstall_panel_only() {
         pkill -f "python app.py" 2>/dev/null || true
         sleep 1
 
+        data_backup_path=""
         if [ -d "$PANEL_DIR/data" ]; then
-            local data_bak="${PANEL_DIR}.data_backup_$(date +%Y%m%d%H%M%S)"
-            echo -e "  ${YELLOW}保留面板数据到 $data_bak${NC}"
-            mv "$PANEL_DIR/data" "$data_bak"
+            read -p "  是否备份面板数据到统一备份目录 $BACKUP_ROOT ？[Y/n]: " do_backup
+            if [ -z "$do_backup" ] || [ "$do_backup" = "y" ] || [ "$do_backup" = "Y" ]; then
+                data_backup_path=$(backup_panel_data)
+                if [ -n "$data_backup_path" ]; then
+                    echo -e "  ${GREEN}面板数据已备份到: ${CYAN}$data_backup_path${NC}"
+                else
+                    print_warning "备份失败，将继续卸载"
+                fi
+            else
+                echo -e "  ${YELLOW}未备份，面板数据将被删除${NC}"
+            fi
         fi
 
         echo -e "  ${CYAN}删除面板程序文件...${NC}"
@@ -112,10 +140,16 @@ uninstall_panel_only() {
         echo ""
         echo -e "  ${WHITE}已保留:${NC}"
         echo -e "    - 网站文件: ${CYAN}$WWW_DIR${NC}"
-        echo -e "    - 面板数据: ${CYAN}${data_bak:-未找到数据目录}${NC}"
+        if [ -n "$data_backup_path" ]; then
+            echo -e "    - 面板数据备份: ${CYAN}$data_backup_path${NC}"
+        else
+            echo -e "    - 面板数据: ${YELLOW}未备份（已删除）${NC}"
+        fi
         echo -e "    - 相关服务: Nginx / MariaDB / PHP-FPM"
         echo ""
-        echo -e "  ${YELLOW}如需恢复：重新运行安装脚本后，将数据目录移回 ${CYAN}$PANEL_DIR/data${NC}"
+        if [ -n "$data_backup_path" ]; then
+            echo -e "  ${YELLOW}如需恢复：重新运行安装脚本后，解压该备份到 ${CYAN}$PANEL_DIR/data${NC}"
+        fi
     else
         echo -e "  ${YELLOW}已取消卸载${NC}"
     fi
@@ -134,7 +168,7 @@ uninstall_full() {
     echo -e "    - 相关服务: ${CYAN}Nginx / MariaDB / PHP-FPM${NC}"
     echo -e "    - MariaDB 数据目录: ${CYAN}$PREFIX/var/lib/mysql${NC}"
     echo ""
-    read -p "此操作不可恢复！数据将先备份到 ~/zeropanel_data_backup_*。确认完全卸载？[y/N]: " confirm
+    read -p "此操作不可恢复！确认完全卸载？[y/N]: " confirm
     if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
         echo -e "  ${CYAN}停止相关服务...${NC}"
         pkill -f "python3 app.py" 2>/dev/null || true
@@ -145,10 +179,19 @@ uninstall_full() {
         pkill -f php-fpm 2>/dev/null || true
         sleep 2
 
+        data_backup_path=""
         if [ -d "$PANEL_DIR/data" ]; then
-            local backup_dir="$HOME/zeropanel_data_backup_$(date +%Y%m%d%H%M%S)"
-            echo -e "  ${YELLOW}备份面板数据到 $backup_dir${NC}"
-            cp -r "$PANEL_DIR/data" "$backup_dir"
+            read -p "  是否备份面板数据到统一备份目录 $BACKUP_ROOT ？[Y/n]: " do_backup
+            if [ -z "$do_backup" ] || [ "$do_backup" = "y" ] || [ "$do_backup" = "Y" ]; then
+                data_backup_path=$(backup_panel_data)
+                if [ -n "$data_backup_path" ]; then
+                    echo -e "  ${GREEN}面板数据已备份到: ${CYAN}$data_backup_path${NC}"
+                else
+                    print_warning "备份失败，将继续卸载"
+                fi
+            else
+                echo -e "  ${YELLOW}未备份，面板数据将被删除${NC}"
+            fi
         fi
 
         echo -e "  ${CYAN}删除面板、网站与配置...${NC}"
@@ -171,7 +214,10 @@ uninstall_full() {
         echo -e "              ${GREEN}ZeroPanel 已完全卸载${NC}"
         print_separator
         echo ""
-        [ -n "${backup_dir:-}" ] && echo -e "  ${YELLOW}数据备份: $backup_dir${NC}"
+        if [ -n "$data_backup_path" ]; then
+            echo -e "  ${YELLOW}数据备份: ${CYAN}$data_backup_path${NC}"
+            echo -e "  ${YELLOW}如需恢复：重新安装面板后，解压该备份到 ${CYAN}$PANEL_DIR/data${NC}"
+        fi
     else
         echo -e "  ${YELLOW}已取消卸载${NC}"
     fi
@@ -361,9 +407,26 @@ PANEL_DIR="$HOME/.zeropanel"
 LOG_FILE="$PANEL_DIR/data/panel.log"
 DATA_DIR="$PANEL_DIR/data"
 WWW_DIR="$HOME/www"
+BACKUP_ROOT="$HOME/.zeropanel_backups"
 [ -z "$PREFIX" ] && PREFIX="/data/data/com.termux/files/usr"
 
 mkdir -p "$DATA_DIR"
+
+backup_panel_data() {
+    local stamp=$(date +%Y%m%d%H%M%S)
+    mkdir -p "$BACKUP_ROOT"
+    local dest="$BACKUP_ROOT/zeropanel_data_${stamp}.tar.gz"
+    if command -v tar >/dev/null 2>&1 && tar -czf "$dest" -C "$(dirname "$DATA_DIR")" "$(basename "$DATA_DIR")" >/dev/null 2>&1; then
+        echo "$dest"
+    else
+        local dir_dest="$BACKUP_ROOT/zeropanel_data_${stamp}"
+        if cp -r "$DATA_DIR" "$dir_dest" >/dev/null 2>&1; then
+            echo "$dir_dest"
+        else
+            echo ""
+        fi
+    fi
+}
 
 python_cmd() {
     if command -v python3 >/dev/null 2>&1; then echo "python3";
@@ -446,23 +509,45 @@ case "$1" in
                 PY_CMD=$(python_cmd)
                 [ -n "$PY_CMD" ] && pkill -f "$PY_CMD app.py" 2>/dev/null || true
                 sleep 1
+                data_backup_path=""
                 if [ -d "$PANEL_DIR/data" ]; then
-                    data_bak="${PANEL_DIR}.data_backup_$(date +%Y%m%d%H%M%S)"
-                    echo "  保留面板数据到 $data_bak"
-                    mv "$PANEL_DIR/data" "$data_bak"
+                    read -p "  是否备份面板数据到 $BACKUP_ROOT ？[Y/n]: " do_backup
+                    if [ -z "$do_backup" ] || [ "$do_backup" = "y" ] || [ "$do_backup" = "Y" ]; then
+                        data_backup_path=$(backup_panel_data)
+                        if [ -n "$data_backup_path" ]; then
+                            echo "  面板数据已备份到: $data_backup_path"
+                        else
+                            echo "  [警告] 备份失败，将继续卸载"
+                        fi
+                    else
+                        echo "  未备份，面板数据将被删除"
+                    fi
                 fi
                 rm -rf "$PANEL_DIR"
-                echo -e "\033[0;32m面板程序已卸载（数据与网站保留）\033[0m"
-                echo "  数据: ${data_bak:-未找到数据目录}"
+                echo -e "\033[0;32m面板程序已卸载（网站与服务保留）\033[0m"
                 echo "  网站: $WWW_DIR"
-                echo "  恢复: 重新运行安装脚本后，将数据目录移回 $PANEL_DIR/data"
+                if [ -n "$data_backup_path" ]; then
+                    echo "  数据备份: $data_backup_path"
+                    echo "  恢复: 重新运行安装脚本后，解压该备份到 $PANEL_DIR/data"
+                else
+                    echo "  面板数据: 未备份（已删除）"
+                fi
                 ;;
             2)
                 "$0" stop
+                data_backup_path=""
                 if [ -d "$PANEL_DIR/data" ]; then
-                    backup_dir="$HOME/zeropanel_data_backup_$(date +%Y%m%d%H%M%S)"
-                    echo "  备份数据到 $backup_dir"
-                    cp -r "$PANEL_DIR/data" "$backup_dir"
+                    read -p "  是否备份面板数据到 $BACKUP_ROOT ？[Y/n]: " do_backup
+                    if [ -z "$do_backup" ] || [ "$do_backup" = "y" ] || [ "$do_backup" = "Y" ]; then
+                        data_backup_path=$(backup_panel_data)
+                        if [ -n "$data_backup_path" ]; then
+                            echo "  面板数据已备份到: $data_backup_path"
+                        else
+                            echo "  [警告] 备份失败，将继续卸载"
+                        fi
+                    else
+                        echo "  未备份，面板数据将被删除"
+                    fi
                 fi
                 rm -rf "$PANEL_DIR"
                 rm -rf "$WWW_DIR"
@@ -475,7 +560,10 @@ case "$1" in
                 pkg uninstall -y nginx mariadb php-fpm 2>&1 | tail -n 3 || true
                 rm -rf "$PREFIX/var/lib/mysql"
                 echo -e "\033[0;32mZeroPanel 已完全卸载\033[0m"
-                [ -n "${backup_dir:-}" ] && echo "  数据备份: $backup_dir"
+                if [ -n "$data_backup_path" ]; then
+                    echo "  数据备份: $data_backup_path"
+                    echo "  恢复: 重新安装面板后，解压该备份到 $PANEL_DIR/data"
+                fi
                 ;;
             *)
                 echo "已取消"

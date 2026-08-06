@@ -39,6 +39,10 @@ BASE_DIR = Path('/var/lib/zeropanel')
 DATA_DIR = BASE_DIR / 'data'
 DB_PATH = DATA_DIR / 'panel.db'
 BACKUP_DIR = DATA_DIR / 'backups'
+# 统一备份根目录：云更新备份与卸载备份共用（与面板目录平级，卸载不影响）
+BACKUP_ROOT = Path('/var/lib/zeropanel_backups')
+# 云更新备份目录（统一备份根目录下）
+UPDATE_BACKUP_DIR = BACKUP_ROOT / 'update_backup'
 UPLOAD_DIR = DATA_DIR / 'uploads'
 # 网站根目录：文件管理默认打开目录与创建网站根目录均以此为基准
 WWW_DIR = Path('/var/www')
@@ -2649,7 +2653,7 @@ def api_do_update():
             return jsonify({'success': False, 'message': '缺少下载链接'})
 
         # 1. 创建备份
-        backup_dir = DATA_DIR / 'update_backup'
+        backup_dir = UPDATE_BACKUP_DIR
         backup_dir.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         backup_file = backup_dir / ('backup_' + timestamp + '.zip')
@@ -2717,7 +2721,7 @@ def api_do_update():
 def api_list_backups():
     """列出可用的更新备份文件"""
     try:
-        backup_dir = DATA_DIR / 'update_backup'
+        backup_dir = UPDATE_BACKUP_DIR
         if not backup_dir.exists():
             return jsonify({'success': True, 'backups': []})
 
@@ -2740,7 +2744,7 @@ def api_list_backups():
 def api_delete_backup(filename):
     """删除云更新备份文件"""
     try:
-        backup_dir = DATA_DIR / 'update_backup'
+        backup_dir = UPDATE_BACKUP_DIR
 
         # 文件名安全校验：禁止路径分隔符和上级目录
         if not filename or '/' in filename or '\\' in filename or '..' in filename:

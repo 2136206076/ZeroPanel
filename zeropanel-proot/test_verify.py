@@ -397,7 +397,7 @@ def main():
     print('\n14. 删除云更新备份接口')
 
     import app as backup_app
-    update_backup_dir = backup_app.DATA_DIR / 'update_backup'
+    update_backup_dir = backup_app.UPDATE_BACKUP_DIR
     update_backup_dir.mkdir(parents=True, exist_ok=True)
     test_backup = update_backup_dir / 'backup_test_20260101.zip'
 
@@ -440,6 +440,14 @@ def main():
     finally:
         if test_backup.exists():
             test_backup.unlink()
+
+    # 15. 备份路径统一（云更新备份与卸载备份共用统一目录）
+    print('\n15. 备份路径统一')
+
+    import app as backup_app
+    test('云更新备份位于统一备份根目录下', str(backup_app.UPDATE_BACKUP_DIR).startswith(str(backup_app.BACKUP_ROOT) + os.sep))
+    test('统一备份根目录与面板目录平级', str(backup_app.BACKUP_ROOT).startswith(str(backup_app.BASE_DIR.parent) + os.sep))
+    test('云更新备份目录不在面板目录内', not str(backup_app.UPDATE_BACKUP_DIR).startswith(str(backup_app.BASE_DIR) + os.sep))
 
     print('\n' + '=' * 50)
     print(f'验证完成：通过 {PASS} 项，失败 {FAIL} 项')
