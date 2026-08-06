@@ -1,5 +1,19 @@
 # ZeroPanel Proot 高级版更新日志
 
+## v2.0.22
+
+### 新增功能
+
+- **安装脚本自动识别系统并添加 PHP 多版本源 (SURY)**
+  - 安装时自动检测 Debian/Ubuntu 发行版与版本代号（如 bookworm、jammy），为受支持系统自动写入 SURY PHP 源文件
+  - 支持 Debian buster/bullseye/bookworm/trixie/sid 与 Ubuntu focal/jammy/noble，添加源后可安装任意 PHP 版本（7.4~8.4）
+  - 源添加失败或系统不受支持时自动回退，不影响官方源安装，面板仍可正常使用
+  - 启用多版本源时自动预装面板默认使用的 PHP 8.0 及常用扩展（mysql/curl/gd/mbstring/xml/zip/bcmath/opcache/intl）
+  - PHP-FPM 配置与启动循环扩展支持 PHP 8.4
+  - 完全卸载时自动清理 PHP 源文件
+
+---
+
 ## v2.0.21
 
 ### 新增功能

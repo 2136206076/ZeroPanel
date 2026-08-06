@@ -1,6 +1,7 @@
 #!/bin/bash
 # ZeroPanel v2.0 - Proot (Ubuntu/Debian) 高级版安装脚本
 # 仅适用于 Proot 容器内的 Ubuntu / Debian 环境
+# 安装时自动识别系统版本，并为受支持的 Debian/Ubuntu 自动添加 PHP 多版本源 (SURY)
 
 set -e
 set -o pipefail
@@ -80,6 +81,82 @@ check_proot_environment() {
     exit 1
 }
 
+# 检测操作系统发行版与版本代号
+detect_os() {
+    OS_ID=""
+    OS_VERSION_ID=""
+    OS_CODENAME=""
+
+    if [ -f "/etc/os-release" ]; then
+        OS_ID=$(grep -E '^ID=' /etc/os-release | head -1 | cut -d= -f2 | tr -d '"')
+        OS_VERSION_ID=$(grep -E '^VERSION_ID=' /etc/os-release | head -1 | cut -d= -f2 | tr -d '"')
+        OS_CODENAME=$(grep -E '^VERSION_CODENAME=' /etc/os-release | head -1 | cut -d= -f2 | tr -d '"')
+    fi
+
+    if [ -z "$OS_CODENAME" ] && command_exists lsb_release; then
+        OS_CODENAME=$(lsb_release -sc 2>/dev/null)
+    fi
+
+    [ -z "$OS_ID" ] && OS_ID="unknown"
+    [ -z "$OS_VERSION_ID" ] && OS_VERSION_ID="unknown"
+    [ -z "$OS_CODENAME" ] && OS_CODENAME="unknown"
+    return 0
+}
+
+# 判断系统是否在 PHP 多版本源 (SURY) 支持列表内
+is_sury_supported() {
+    case "${OS_ID}:${OS_CODENAME}" in
+        debian:buster|debian:bullseye|debian:bookworm|debian:trixie|debian:sid)
+            return 0 ;;
+        ubuntu:focal|ubuntu:jammy|ubuntu:noble)
+            return 0 ;;
+        *)
+            return 1 ;;
+    esac
+}
+
+# 添加 PHP 多版本源 (SURY)，使面板可安装任意 PHP 版本
+add_php_repo() {
+    local keyring_deb="/tmp/debsuryorg-archive-keyring.deb"
+
+    if [ -z "$OS_CODENAME" ] || [ "$OS_CODENAME" = "unknown" ]; then
+        print_warning "无法识别系统版本代号，跳过第三方源"
+        return 1
+    fi
+
+    # 确保密钥包依赖已安装
+    apt-get install -y ca-certificates curl >/dev/null 2>&1 || true
+
+    if [ ! -f "/usr/share/keyrings/debsuryorg-archive-keyring.gpg" ]; then
+        echo -e "  ${CYAN}下载 PHP 源密钥...${NC}"
+        if ! curl -fsSL -o "$keyring_deb" "https://packages.sury.org/debsuryorg-archive-keyring.deb"; then
+            print_warning "PHP 源密钥下载失败，跳过第三方源"
+            return 1
+        fi
+
+        if ! dpkg -i "$keyring_deb" >/dev/null 2>&1; then
+            # 依赖问题：尝试修复后重装
+            apt-get install -y -f >/dev/null 2>&1 || true
+            dpkg -i "$keyring_deb" >/dev/null 2>&1 || {
+                print_warning "PHP 源密钥安装失败，跳过第三方源"
+                return 1
+            }
+        fi
+
+        if [ ! -f "/usr/share/keyrings/debsuryorg-archive-keyring.gpg" ]; then
+            print_warning "PHP 源密钥文件未生成，跳过第三方源"
+            return 1
+        fi
+    else
+        print_success "PHP 源密钥已存在"
+    fi
+
+    echo -e "  ${CYAN}写入 PHP 源文件: /etc/apt/sources.list.d/php.sury.org.list${NC}"
+    echo "deb [signed-by=/usr/share/keyrings/debsuryorg-archive-keyring.gpg] https://packages.sury.org/php/ ${OS_CODENAME} main" > /etc/apt/sources.list.d/php.sury.org.list
+    print_success "PHP 多版本源已添加"
+    return 0
+}
+
 # 仅卸载面板程序文件（保留网站、数据、相关服务）
 uninstall_panel_only() {
     print_title
@@ -157,6 +234,7 @@ uninstall_full() {
         rm -rf "$WWW_DIR"
         rm -f /etc/nginx/conf.d/zeropanel*.conf
         rm -f /usr/local/bin/zeropanel
+        rm -f /etc/apt/sources.list.d/php.sury.org.list
 
         echo -e "  ${CYAN}卸载相关服务 (nginx / mariadb-server / php-fpm / php-mysql)...${NC}"
         DEBIAN_FRONTEND=noninteractive apt-get remove -y --purge nginx mariadb-server php-fpm php-mysql 2>&1 | tail -n 3 || true
@@ -196,20 +274,45 @@ uninstall_proot() {
 install_proot() {
     local total_steps=9
 
-    # 步骤 1: 更新软件源
-    print_step 1 $total_steps "更新软件源"
-    echo -e "  ${CYAN}apt-get update...${NC}"
-    if apt-get update -y 2>&1 | tail -n 5; then
-        print_success "软件源更新完成"
-    else
+    # 步骤 1: 检测系统并配置软件源
+    print_step 1 $total_steps "检测系统并配置软件源"
+    detect_os
+    echo -e "  检测到系统: ${WHITE}${OS_ID} ${OS_VERSION_ID} (${OS_CODENAME})${NC}"
+
+    echo -e "  ${CYAN}apt-get update (官方源)...${NC}"
+    if ! apt-get update -y 2>&1 | tail -n 5; then
         print_error "软件源更新失败"
         exit 1
+    fi
+    print_success "官方软件源更新完成"
+
+    PHP_REPO_ADDED=0
+    if is_sury_supported "$OS_ID" "$OS_CODENAME"; then
+        echo -e "  ${CYAN}添加 PHP 多版本源 (SURY)...${NC}"
+        if add_php_repo; then
+            PHP_REPO_ADDED=1
+            if ! apt-get update -y 2>&1 | tail -n 5; then
+                print_warning "PHP 源更新失败，移除第三方源后继续（仅可使用官方源自带的 PHP 版本）"
+                rm -f /etc/apt/sources.list.d/php.sury.org.list
+                PHP_REPO_ADDED=0
+                apt-get update -y >/dev/null 2>&1 || true
+            else
+                print_success "PHP 多版本源更新完成"
+            fi
+        fi
+    else
+        print_warning "系统 ($OS_ID $OS_CODENAME) 不在 PHP 多版本源支持列表，仅可使用官方源自带的 PHP 版本"
     fi
 
     # 步骤 2: 安装系统依赖
     print_step 2 $total_steps "安装系统依赖"
     echo -e "  ${CYAN}正在安装 Nginx、MariaDB、PHP-FPM、Python3...${NC}"
-    if apt-get install -y python3 python3-pip nginx mariadb-server php-fpm php-mysql curl unzip cron 2>&1 | tail -n 3; then
+    local deps="python3 python3-pip nginx mariadb-server php-fpm php-mysql curl unzip cron"
+    if [ "$PHP_REPO_ADDED" = "1" ]; then
+        echo -e "  ${YELLOW}已启用 PHP 多版本源，将同时安装面板默认使用的 PHP 8.0 及常用扩展${NC}"
+        deps="$deps php8.0-fpm php8.0-mysql php8.0-curl php8.0-gd php8.0-mbstring php8.0-xml php8.0-zip php8.0-bcmath php8.0-opcache php8.0-intl"
+    fi
+    if apt-get install -y $deps 2>&1 | tail -n 3; then
         print_success "系统依赖安装完成"
     else
         print_error "系统依赖安装失败"
@@ -299,7 +402,7 @@ install_proot() {
 
     echo -e "  ${CYAN}配置 PHP-FPM...${NC}"
     # 查找可用的 PHP-FPM 版本，每个版本使用独立 socket
-    for ver in 8.3 8.2 8.1 8.0 7.4; do
+    for ver in 8.4 8.3 8.2 8.1 8.0 7.4; do
         local pool_conf="/etc/php/${ver}/fpm/pool.d/www.conf"
         if [ -f "$pool_conf" ]; then
             cp "$pool_conf" "$pool_conf.bak"
@@ -379,7 +482,7 @@ case "\$1" in
             nginx 2>/dev/null || true
         fi
 
-        for ver in 8.3 8.2 8.1 8.0 7.4; do
+        for ver in 8.4 8.3 8.2 8.1 8.0 7.4; do
             if command -v "php\${ver//./}-fpm" >/dev/null 2>&1 && ! pgrep -f "php\${ver//./}-fpm" >/dev/null; then
                 "php\${ver//./}-fpm" 2>/dev/null || true
             elif command -v "php-fpm\$ver" >/dev/null 2>&1 && ! pgrep -f "php-fpm\$ver" >/dev/null; then
@@ -449,6 +552,7 @@ case "\$1" in
                 rm -rf "\$WWW_DIR"
                 rm -f /etc/nginx/conf.d/zeropanel*.conf
                 rm -f /usr/local/bin/zeropanel
+                rm -f /etc/apt/sources.list.d/php.sury.org.list
                 echo -e "\033[1;37m卸载相关服务 (nginx / mariadb-server / php-fpm / php-mysql)...\033[0m"
                 DEBIAN_FRONTEND=noninteractive apt-get remove -y --purge nginx mariadb-server php-fpm php-mysql 2>&1 | tail -n 3 || true
                 rm -rf /var/lib/mysql
@@ -496,7 +600,7 @@ SCRIPT
         nginx 2>/dev/null || true
     fi
 
-    for ver in 8.3 8.2 8.1 8.0 7.4; do
+    for ver in 8.4 8.3 8.2 8.1 8.0 7.4; do
         if command -v "php${ver//./}-fpm" >/dev/null 2>&1 && ! pgrep -f "php${ver//./}-fpm" >/dev/null; then
             "php${ver//./}-fpm" 2>/dev/null || true
         elif command -v "php-fpm$ver" >/dev/null 2>&1 && ! pgrep -f "php-fpm$ver" >/dev/null; then
