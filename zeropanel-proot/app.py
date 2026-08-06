@@ -2712,7 +2712,7 @@ def api_do_update():
         return jsonify({'success': False, 'message': '更新失败: ' + str(e)})
 
 
-@app.route('/api/system/backups')
+@app.route('/api/system/backups', methods=['GET'])
 @login_required
 def api_list_backups():
     """列出可用的更新备份文件"""
@@ -2733,6 +2733,36 @@ def api_list_backups():
         return jsonify({'success': True, 'backups': backups})
     except Exception as e:
         return jsonify({'success': False, 'message': '获取备份列表失败: ' + str(e)})
+
+
+@app.route('/api/system/backups/<path:filename>', methods=['DELETE'])
+@login_required
+def api_delete_backup(filename):
+    """删除云更新备份文件"""
+    try:
+        backup_dir = DATA_DIR / 'update_backup'
+
+        # 文件名安全校验：禁止路径分隔符和上级目录
+        if not filename or '/' in filename or '\\' in filename or '..' in filename:
+            return jsonify({'success': False, 'message': '备份文件名非法'})
+
+        backup_path = (backup_dir / filename).resolve()
+        backup_dir_resolved = backup_dir.resolve()
+
+        # 确保文件位于 update_backup 目录内
+        try:
+            backup_path.relative_to(backup_dir_resolved)
+        except ValueError:
+            return jsonify({'success': False, 'message': '备份文件路径非法'})
+
+        # 仅允许删除备份 zip 文件
+        if not backup_path.is_file() or backup_path.suffix != '.zip' or not backup_path.name.startswith('backup_'):
+            return jsonify({'success': False, 'message': '备份文件不存在'})
+
+        backup_path.unlink()
+        return jsonify({'success': True, 'message': '备份已删除'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': '删除备份失败: ' + str(e)})
 
 
 @app.route('/api/system/rollback', methods=['POST'])

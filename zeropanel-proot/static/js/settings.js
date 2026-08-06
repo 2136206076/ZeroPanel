@@ -302,7 +302,10 @@ async function loadBackups() {
                         <div style="color: #e2e8f0;">${backup.filename}</div>
                         <div style="color: #94a3b8; font-size: 11px;">${backup.created} · ${size}</div>
                     </div>
-                    <button class="btn btn-small btn-danger" onclick="rollback('${backup.path}')">回滚</button>
+                    <div style="display: flex; gap: 6px;">
+                        <button class="btn btn-small btn-danger" onclick="rollback('${backup.path}')">回滚</button>
+                        <button class="btn btn-small btn-secondary" onclick="deleteBackup('${backup.filename}')">删除</button>
+                    </div>
                 </div>
             `;
         });
@@ -310,6 +313,29 @@ async function loadBackups() {
         container.innerHTML = html;
     } catch (error) {
         document.getElementById('backup-list').innerHTML = `<p class="text-secondary" style="font-size: 13px;">获取备份列表失败: ${error.message}</p>`;
+    }
+}
+
+// 删除备份
+async function deleteBackup(filename) {
+    if (!confirm('确定要删除备份文件 ' + filename + ' 吗？\n删除后无法恢复。')) {
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/system/backups/' + encodeURIComponent(filename), {
+            method: 'DELETE'
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            showToast('备份已删除', 'success');
+            loadBackups();
+        } else {
+            showToast(data.message || '删除失败', 'error');
+        }
+    } catch (error) {
+        showToast('删除失败: ' + error.message, 'error');
     }
 }
 

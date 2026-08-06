@@ -393,6 +393,54 @@ def main():
 
     app_module.run_command = original_run_command
 
+    # 14. 删除云更新备份接口
+    print('\n14. 删除云更新备份接口')
+
+    import app as backup_app
+    update_backup_dir = backup_app.DATA_DIR / 'update_backup'
+    update_backup_dir.mkdir(parents=True, exist_ok=True)
+    test_backup = update_backup_dir / 'backup_test_20260101.zip'
+
+    try:
+        with app.test_client() as c:
+            c.post('/api/login', json={'username': 'admin', 'password': 'admin123'})
+
+            # 创建测试备份文件
+            test_backup.write_bytes(b'test backup content')
+
+            # 删除合法备份文件
+            resp = c.delete('/api/system/backups/backup_test_20260101.zip')
+            data = resp.get_json()
+            test('删除合法备份成功', data['success'])
+            test('备份文件已删除', not test_backup.exists())
+
+            # 路径遍历文件名应被拒绝
+            test_backup.write_bytes(b'test backup content')
+            resp = c.delete('/api/system/backups/../backup_test_20260101.zip')
+            data = resp.get_json()
+            test('路径遍历文件名被拒绝', not data['success'])
+            test('路径遍历未删除文件', test_backup.exists())
+
+            # 非 backup_ 前缀文件应被拒绝
+            normal_file = update_backup_dir / 'normal.txt'
+            normal_file.write_bytes(b'x')
+            resp = c.delete('/api/system/backups/normal.txt')
+            data = resp.get_json()
+            test('非备份文件被拒绝删除', not data['success'])
+            normal_file.unlink()
+
+            # 删除不存在的备份应失败
+            resp = c.delete('/api/system/backups/backup_nonexist.zip')
+            data = resp.get_json()
+            test('删除不存在备份失败', not data['success'])
+
+        # 清理
+        if test_backup.exists():
+            test_backup.unlink()
+    finally:
+        if test_backup.exists():
+            test_backup.unlink()
+
     print('\n' + '=' * 50)
     print(f'验证完成：通过 {PASS} 项，失败 {FAIL} 项')
     if FAIL > 0:
