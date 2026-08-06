@@ -23,6 +23,7 @@ from app import (
     quote_identifier,
     quote_string,
     get_system_stats,
+    get_system_info,
     get_safe_domain,
     is_valid_domain,
     get_nginx_config_path,
@@ -177,6 +178,12 @@ def main():
     test('执行更新 API 存在', '/api/system/do-update' in routes)
     test('重启面板 API 存在', '/api/system/restart' in routes)
     test('根路径 / 存在（登录页）', '/' in routes)
+
+    # 系统信息：运行时长应为面板进程启动至今的时间，格式为「X天 X小时 X分钟」
+    import re
+    info = get_system_info()
+    uptime = info.get('uptime', '')
+    test('运行时长格式正确', bool(re.fullmatch(r'\d+天 \d+小时 \d+分钟', uptime)), f"实际: {uptime}")
 
     # 9. 登录/认证流程（使用测试客户端）
     print('\n9. 登录/认证流程')

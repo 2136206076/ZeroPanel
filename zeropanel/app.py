@@ -32,6 +32,8 @@ from werkzeug.utils import secure_filename
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB
 
+# 面板启动时间（模块加载时记录，用于计算面板运行时长）
+PANEL_START_TIME = time.time()
 # 配置（根据环境自动检测）
 BASE_DIR = Path(__file__).parent.resolve()
 DATA_DIR = BASE_DIR / 'data'
@@ -289,15 +291,12 @@ def get_system_info():
                 if len(parts) >= 2:
                     info['total_disk'] = int(parts[1])
         
-        # 获取运行时间
-        uptime_file = Path('/proc/uptime')
-        if uptime_file.exists():
-            with open(uptime_file, 'r') as f:
-                uptime_seconds = float(f.read().split()[0])
-                days = int(uptime_seconds // 86400)
-                hours = int((uptime_seconds % 86400) // 3600)
-                minutes = int((uptime_seconds % 3600) // 60)
-                info['uptime'] = f'{days}天 {hours}小时 {minutes}分钟'
+        # 获取面板运行时长（自面板进程启动至今，而非系统开机时间）
+        uptime_seconds = max(0, time.time() - PANEL_START_TIME)
+        days = int(uptime_seconds // 86400)
+        hours = int((uptime_seconds % 86400) // 3600)
+        minutes = int((uptime_seconds % 3600) // 60)
+        info['uptime'] = f'{days}天 {hours}小时 {minutes}分钟'
     except Exception:
         pass
     
